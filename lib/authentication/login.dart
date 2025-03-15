@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:van_sale_applicatioin/main_pages/sale_order.dart';
+import '../main_pages/order_picking.dart';
+import '../provider_and_models/odoo_session_model.dart';
+import '../provider_and_models/order_picking_provider.dart';
+import '../provider_and_models/sales_order_provider.dart';
 import '../widgets/snackbar.dart';
-
-final Color neutralGrey = const Color(0xFF757575);
-final Color backgroundColor = const Color(0xFFF5F5F5);
-final Color textColor = const Color(0xFF212121);
-const Color primaryColor = Color(0xFFA12424);
-const Color primaryLightColor = Color(0xFFD15656);
-const Color primaryDarkColor = Color(0xFF6D1717);
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -52,25 +49,40 @@ class _LoginState extends State<Login> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(
-                    'No database selected. Please choose a database first.')),
+              content:
+                  Text('No database selected. Please choose a database first.'),
+            ),
           );
           return;
         }
-        print("Dataaaaaaa:$savedDb");
+
         var session = await client!.authenticate(
-          savedDb!,
+          savedDb,
           emailController.text.trim(),
           passwordController.text.trim(),
         );
-        print("Login successful: $session");
-        print(session.id);
+
         if (session != null) {
-          await saveSession(session);
-          await addShared();
+          final sessionModel = OdooSessionModel.fromOdooSession(
+              session,
+              passwordController.text.trim(),
+              urlController.text.trim(),
+              savedDb);
+
+          await sessionModel.saveToPrefs();
+
+          final salesProvider =
+              Provider.of<SalesOrderProvider>(context, listen: false);
+          final shortageProvider =
+              Provider.of<OrderPickingProvider>(context, listen: false);
+
+          await salesProvider.loadProducts();
+
+          await shortageProvider.loadCustomers();
+
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => SalesOrderApp()),
+            MaterialPageRoute(builder: (context) => const OrderTakingPage()),
           );
         } else {
           setState(() {
@@ -78,7 +90,6 @@ class _LoginState extends State<Login> {
             disableFields = false;
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text('$errorMessage')));
-            print(errorMessage);
           });
         }
       } on OdooException {
@@ -87,21 +98,18 @@ class _LoginState extends State<Login> {
           final snackBar = CustomSnackbar()
               .showSnackBar("error", '$errorMessage', "error", () {});
           ScaffoldMessenger.of(context).showSnackBar(snackBar);
-          print(errorMessage);
         });
       } catch (e) {
         setState(() {
-          print(e);
-          print(errorMessage);
           errorMessage = 'Network Error';
           final snackBar = CustomSnackbar()
               .showSnackBar("error", '$errorMessage', "error", () {});
           ScaffoldMessenger.of(context).showSnackBar(snackBar);
-          print(errorMessage);
         });
       } finally {
         setState(() {
           isLoading = false;
+          disableFields = false;
         });
       }
     }
@@ -135,7 +143,7 @@ class _LoginState extends State<Login> {
     await prefs.setString('urldata', urlController.text);
     await prefs.setString('emaildata', emailController.text);
     await prefs.setString('passworddata', passwordController.text);
-    // await prefs.setString('database', Database ?? "");
+
     if (Database != null && Database!.isNotEmpty) {
       await prefs.setString('database', Database!);
     }
@@ -147,12 +155,7 @@ class _LoginState extends State<Login> {
     print(savedUrl);
     final savedDb = prefs.getString('database');
     print(savedDb);
-    //   if (savedUrl != null && savedDb != null) {
-    //     setState(() {
-    //       frstLogin = false;
-    //     });
-    //   }
-    // }
+
     if (savedUrl != null && savedDb != null && savedDb.isNotEmpty) {
       setState(() {
         frstLogin = false;
@@ -212,8 +215,6 @@ class _LoginState extends State<Login> {
 
   @override
   Widget build(BuildContext context) {
-    // Classic color palette
-
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: backgroundColor,
@@ -380,8 +381,8 @@ class _LoginState extends State<Login> {
                                           print("Select database pressed");
                                         },
                                       );
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(snackBar);
+                                      // ScaffoldMessenger.of(context)
+                                      //     .showSnackBar(snackBar);
                                     } else {
                                       saveLogin();
                                       login();
