@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:van_sale_applicatioin/provider_and_models/order_picking_provider.dart';
+import 'package:van_sale_applicatioin/provider_and_models/sales_order_provider.dart';
 
-import 'Login/login.dart';
+import 'authentication/login.dart';
 
 void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: true,
-      home: const Login(),
-    );
-  }
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => SalesOrderProvider()),
+        ChangeNotifierProvider(create: (context) => OrderPickingProvider()),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(
+        ),
+        home: const Login(),
+      ),
+    ),
+  );
 }
