@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../main_pages/order_picking.dart';
-import '../provider_and_models/odoo_session_model.dart';
+import '../main_pages/order_picking_page.dart';
+import '../provider_and_models/cyllo_session_model.dart';
 import '../provider_and_models/order_picking_provider.dart';
 import '../provider_and_models/sales_order_provider.dart';
 import '../widgets/snackbar.dart';
@@ -63,7 +63,7 @@ class _LoginState extends State<Login> {
         );
 
         if (session != null) {
-          final sessionModel = OdooSessionModel.fromOdooSession(
+          final sessionModel = CylloSessionModel.fromOdooSession(
               session,
               passwordController.text.trim(),
               urlController.text.trim(),
@@ -71,19 +71,19 @@ class _LoginState extends State<Login> {
 
           await sessionModel.saveToPrefs();
 
-          final salesProvider =
-              Provider.of<SalesOrderProvider>(context, listen: false);
-          final shortageProvider =
+          // final salesProvider =
+          //     Provider.of<SalesOrderProvider>(context, listen: false);
+          // final shortageProvider =
+          //     Provider.of<OrderPickingProvider>(context, listen: false);
+
+          // await salesProvider.loadProducts();
+
+          // await shortageProvider.loadCustomers();
+
+          final provider =
               Provider.of<OrderPickingProvider>(context, listen: false);
 
-          await salesProvider.loadProducts();
-
-          await shortageProvider.loadCustomers();
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const OrderTakingPage()),
-          );
+          provider.showProductSelectionPage(context);
         } else {
           setState(() {
             errorMessage = 'Authentication failed: No session returned.';

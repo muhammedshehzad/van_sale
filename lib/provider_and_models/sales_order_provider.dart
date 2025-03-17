@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:animated_custom_dropdown/custom_dropdown.dart';
 import 'package:flutter/material.dart';
-import 'odoo_session_model.dart';
+import 'cyllo_session_model.dart';
 
 Map<String, int> _temporaryInventory = {};
 
@@ -115,6 +115,11 @@ class SalesOrderProvider with ChangeNotifier {
   String? _customerName;
   SalesOrder? _salesOrder;
   bool _isLoading = false;
+  final Set<String> _confirmedOrderIds = {};
+
+  bool isOrderIdConfirmed(String orderId) {
+    return _confirmedOrderIds.contains(orderId);
+  }
 
   int get currentStep => _currentStep;
 
@@ -171,6 +176,43 @@ class SalesOrderProvider with ChangeNotifier {
   void updateInventory(String productId, int quantity) {
     final currentInventory = getAvailableQuantity(productId);
     _temporaryInventory[productId] = currentInventory - quantity;
+    notifyListeners();
+  }
+
+  Future<void> confirmOrderInCyllo({
+    required String orderId,
+    required List<OrderItem> items,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _salesOrder = SalesOrder(
+        id: orderId,
+        items: items,
+        creationDate: DateTime.now(),
+        status: 'Confirmed',
+        validated: true,
+      );
+      _orderItems = [];
+      _temporaryInventory.clear();
+      _confirmedOrderIds.add(orderId);
+      notifyListeners();
+    } catch (e) {
+      log('Error confirming order: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void notifyOrderConfirmed() {
+    notifyListeners();
+  }
+
+  void clearConfirmedOrderIds() {
+    _confirmedOrderIds.clear();
     notifyListeners();
   }
 

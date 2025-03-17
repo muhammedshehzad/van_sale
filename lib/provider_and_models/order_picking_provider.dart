@@ -3,12 +3,14 @@ import 'package:intl/intl.dart';
 import 'dart:developer';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../main_pages/order_picking.dart';
+import '../main_pages/order_picking_page.dart';
 import '../secondary_pages/summary_page.dart';
 import '../widgets/customer_dialog.dart';
-import 'odoo_session_model.dart';
-import '../secondary_pages/add_products.dart';
+import '../widgets/page_transition.dart';
+import 'cyllo_session_model.dart';
+import '../secondary_pages/add_products_page.dart';
 import 'sales_order_provider.dart';
+import 'dart:developer' as developer;
 
 const Color primaryColor = Color(0xFFA12424);
 final Color neutralGrey = const Color(0xFF757575);
@@ -21,25 +23,13 @@ const double kBorderRadius = 8.0;
 class OrderPickingProvider with ChangeNotifier {
   List<ProductItem> _products = [];
   String? _currentOrderId;
-  static const String _orderPrefix = 'SO';
+  static const String _orderPrefix = 'S';
   int _lastSequenceNumber = 0;
 
   String? get currentOrderId => _currentOrderId;
 
   List<ProductItem> get products => _products;
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-
-  Future<String> generateOrderId() async {
-    await _loadLastSequenceNumber();
-    final now = DateTime.now();
-    final datePart = DateFormat('yyyyMMdd').format(now);
-    _lastSequenceNumber++;
-    final sequencePart = _lastSequenceNumber.toString().padLeft(5, '0');
-    _currentOrderId = '$_orderPrefix$datePart-$sequencePart';
-    await _saveLastSequenceNumber();
-    notifyListeners();
-    return _currentOrderId!;
-  }
 
   void resetOrderId() {
     _currentOrderId = null;
@@ -85,10 +75,8 @@ class OrderPickingProvider with ChangeNotifier {
 
   bool get isLoadingCustomers => _isLoadingCustomers;
 
-
   void addCustomer(Customer customer) {
     _customers.add(customer);
-    // Sort customers by name after adding a new one
     _customers.sort((a, b) => a.name.compareTo(b.name));
     notifyListeners();
   }
@@ -100,7 +88,6 @@ class OrderPickingProvider with ChangeNotifier {
         onCustomerCreated: (Customer newCustomer) {
           addCustomer(newCustomer);
 
-          // Pre-fill customer information in form fields
           shopNameController.text = newCustomer.name;
           shopLocationController.text = newCustomer.city ?? '';
           contactPersonController.text = newCustomer.name;
@@ -116,16 +103,19 @@ class OrderPickingProvider with ChangeNotifier {
       ),
     );
   }
-  void addNewProduct(BuildContext context) {
+
+  void addNewProduct(BuildContext context) async {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         final nameController = TextEditingController();
         final quantityController = TextEditingController();
-        final notesController = TextEditingController();
+        final salePriceController = TextEditingController();
+        final costController = TextEditingController();
+        final barcodeController = TextEditingController();
         String selectedUnit = 'Pieces';
         String selectedCategory = 'General';
-        String selectedUrgency = 'Normal';
+        String selectedProductType = 'product';
 
         return Dialog(
           shape: RoundedRectangleBorder(
@@ -157,7 +147,14 @@ class OrderPickingProvider with ChangeNotifier {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  _buildDropdownField(
+                    label: 'Product Type',
+                    value: selectedProductType,
+                    items: ['product', 'consu', 'service'],
+                    onChanged: (value) => selectedProductType = value,
+                  ),
+                  const SizedBox(height: 12),
                   _buildTextField(
                     controller: nameController,
                     label: 'Product Name',
@@ -166,15 +163,21 @@ class OrderPickingProvider with ChangeNotifier {
                         : null,
                   ),
                   const SizedBox(height: 12),
+                  _buildDropdownField(
+                    label: 'Category',
+                    value: selectedCategory,
+                    items: ProductItem().categories,
+                    onChanged: (value) => selectedCategory = value,
+                  ),
+                  const SizedBox(height: 12),
                   _buildTextField(
                     controller: quantityController,
-                    label: 'Quantity',
+                    label: 'Initial Quantity',
                     keyboardType: TextInputType.number,
                     validator: (value) {
                       if (value == null || value.isEmpty)
                         return 'Please enter quantity';
-                      if (int.tryParse(value) == null ||
-                          int.parse(value) <= 0) {
+                      if (int.tryParse(value) == null || int.parse(value) < 0) {
                         return 'Please enter a valid quantity';
                       }
                       return null;
@@ -182,30 +185,42 @@ class OrderPickingProvider with ChangeNotifier {
                   ),
                   const SizedBox(height: 12),
                   _buildDropdownField(
-                    label: 'Unit',
+                    label: 'Unit of Measure',
                     value: selectedUnit,
                     items: ProductItem().units,
-                    onChanged: (value) => selectedUnit = value!,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField(
-                    label: 'Category',
-                    value: selectedCategory,
-                    items: ProductItem().categories,
-                    onChanged: (value) => selectedCategory = value!,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField(
-                    label: 'Urgency',
-                    value: selectedUrgency,
-                    items: ProductItem().urgencyLevels,
-                    onChanged: (value) => selectedUrgency = value!,
+                    onChanged: (value) => selectedUnit = value,
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
-                    controller: notesController,
-                    label: 'Notes (Optional)',
-                    maxLines: 3,
+                    controller: costController,
+                    label: 'Product Cost',
+                    keyboardType:
+                        TextInputType.numberWithOptions(decimal: true),
+                    validator: (value) {
+                      if (value == null || value.isEmpty)
+                        return 'Please enter cost price';
+                      if (double.tryParse(value) == null ||
+                          double.parse(value) < 0) {
+                        return 'Please enter a valid cost price';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    controller: salePriceController,
+                    label: 'Sale Price',
+                    keyboardType:
+                        TextInputType.numberWithOptions(decimal: true),
+                    validator: (value) {
+                      if (value == null || value.isEmpty)
+                        return 'Please enter sale price';
+                      if (double.tryParse(value) == null ||
+                          double.parse(value) < 0) {
+                        return 'Please enter a valid sale price';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 20),
                   Row(
@@ -239,23 +254,123 @@ class OrderPickingProvider with ChangeNotifier {
                           ),
                           elevation: 2,
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           if (nameController.text.isNotEmpty &&
                               quantityController.text.isNotEmpty &&
                               int.tryParse(quantityController.text) != null &&
-                              int.parse(quantityController.text) > 0) {
+                              int.parse(quantityController.text) >= 0 &&
+                              salePriceController.text.isNotEmpty &&
+                              double.tryParse(salePriceController.text) !=
+                                  null &&
+                              double.parse(salePriceController.text) >= 0 &&
+                              costController.text.isNotEmpty &&
+                              double.tryParse(costController.text) != null &&
+                              double.parse(costController.text) >= 0) {
                             final newProduct = ProductItem();
                             newProduct.nameController.text =
                                 nameController.text;
                             newProduct.quantityController.text =
                                 quantityController.text;
-                            newProduct.notesController.text =
-                                notesController.text;
+                            newProduct.salePriceController.text =
+                                salePriceController.text;
+                            newProduct.costController.text =
+                                costController.text;
+                            newProduct.barcodeController.text =
+                                barcodeController.text;
                             newProduct.selectedUnit = selectedUnit;
                             newProduct.selectedCategory = selectedCategory;
-                            newProduct.selectedUrgency = selectedUrgency;
-                            _products.add(newProduct);
-                            notifyListeners();
+                            newProduct.selectedProductType =
+                                selectedProductType;
+
+                            try {
+                              final client =
+                                  await SessionManager.getActiveClient();
+                              if (client == null) {
+                                throw Exception(
+                                    'No active Odoo session found. Please log in again.');
+                              }
+
+                              final productData = {
+                                'name': nameController.text,
+                                'default_code':
+                                    'PROD-${DateTime.now().millisecondsSinceEpoch}',
+                                'list_price':
+                                    double.parse(salePriceController.text),
+                                'standard_price':
+                                    double.parse(costController.text),
+                                'barcode': barcodeController.text.isNotEmpty
+                                    ? barcodeController.text
+                                    : false,
+                                'type': selectedProductType,
+                                'uom_id': _mapUnitToOdooId(selectedUnit),
+                                'uom_po_id': _mapUnitToOdooId(selectedUnit),
+                                'categ_id':
+                                    _mapCategoryToOdooId(selectedCategory),
+                              };
+
+                              final productId = await client.callKw({
+                                'model': 'product.product',
+                                'method': 'create',
+                                'args': [productData],
+                                'kwargs': {},
+                              });
+
+                              if (int.parse(quantityController.text) > 0) {
+                                await client.callKw({
+                                  'model': 'stock.quant',
+                                  'method': 'create',
+                                  'args': [
+                                    {
+                                      'product_id': productId,
+                                      'location_id': 8,
+                                      'quantity':
+                                          int.parse(quantityController.text)
+                                              .toDouble(),
+                                    }
+                                  ],
+                                  'kwargs': {},
+                                });
+                              }
+
+                              newProduct.odooId = productId;
+                              _products.add(newProduct);
+                              notifyListeners();
+
+                              final salesProvider =
+                                  Provider.of<SalesOrderProvider>(context,
+                                      listen: false);
+                              try {
+                                await salesProvider.loadProducts();
+                                _availableProducts = salesProvider.products;
+                                notifyListeners();
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          'Failed to refresh products: $e'),
+                                      backgroundColor: Colors.red),
+                                );
+                              }
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Product added successfully to Odoo (ID: $productId)'),
+                                  backgroundColor: Colors.green,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text('Failed to add product to Odoo: $e'),
+                                  backgroundColor: Colors.red,
+                                  duration: const Duration(seconds: 3),
+                                ),
+                              );
+                            }
+
                             Navigator.of(context).pop();
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -288,6 +403,30 @@ class OrderPickingProvider with ChangeNotifier {
         );
       },
     );
+  }
+
+  int _mapUnitToOdooId(String unit) {
+    switch (unit) {
+      case 'Pieces':
+        return 1;
+      case 'Kilograms':
+        return 2;
+
+      default:
+        return 1;
+    }
+  }
+
+  int _mapCategoryToOdooId(String category) {
+    switch (category) {
+      case 'General':
+        return 1;
+      case 'Electronics':
+        return 2;
+
+      default:
+        return 1;
+    }
   }
 
   Widget _buildTextField({
@@ -372,7 +511,7 @@ class OrderPickingProvider with ChangeNotifier {
   Future<void> initialize(BuildContext context) async {
     final provider = Provider.of<SalesOrderProvider>(context, listen: false);
     await provider.loadProducts();
-    _availableProducts = provider.products; // All products are now available
+    _availableProducts = provider.products;
     print('Initialized with ${_availableProducts.length} products');
     await loadCustomers();
     resetOrderId();
@@ -397,24 +536,118 @@ class OrderPickingProvider with ChangeNotifier {
     await prefs.setInt('last_order_sequence', _lastSequenceNumber);
   }
 
+  Future<String> generateOrderId() async {
+    final client = await SessionManager.getActiveClient();
+    if (client == null) {
+      throw Exception('No active Odoo session found. Please log in again.');
+    }
+
+    await _loadLastSequenceNumber();
+    String newOrderId;
+    int maxAttempts = 100;
+    int attempt = 0;
+
+    do {
+      if (attempt >= maxAttempts) {
+        print('Unable to generate unique order ID after $maxAttempts attempts');
+      }
+
+      _lastSequenceNumber++;
+      final sequencePart = _lastSequenceNumber.toString().padLeft(5, '0');
+      newOrderId = '$_orderPrefix$sequencePart';
+
+      // developer.log('Generated order ID attempt #$attempt: $newOrderId');
+
+      final exists = await _checkOrderIdExists(client, newOrderId);
+      // developer.log('Order ID $newOrderId exists in Odoo: $exists');
+
+      if (exists) {
+        attempt++;
+        continue;
+      }
+
+      break;
+    } while (true);
+
+    _currentOrderId = newOrderId;
+    await _saveLastSequenceNumber();
+    // developer.log('Final generated order ID: $_currentOrderId');
+    notifyListeners();
+    return _currentOrderId!;
+  }
+
+  Future<bool> _checkOrderIdExists(dynamic client, String orderId) async {
+    try {
+      // developer.log('Checking if order ID exists: $orderId');
+
+      // Try the standard domain format first
+      final domain = [
+        ['name', '=', orderId]
+      ];
+      // developer.log('Attempting with domain: $domain');
+
+      final result = await client.callKw({
+        'model': 'sale.order',
+        'method': 'search_count',
+        'args': [domain],
+        'kwargs': {},
+      });
+
+      // developer.log(
+      //     'Odoo search_count result for $orderId: $result (type: ${result.runtimeType})');
+
+      final count =
+          (result is int) ? result : int.tryParse(result.toString()) ?? 0;
+      return count > 0;
+    } catch (e) {
+      // developer.log('Error with search_count for $orderId: $e', error: e);
+
+      try {
+        developer.log('Falling back to search method for $orderId');
+        final searchResult = await client.callKw({
+          'model': 'sale.order',
+          'method': 'search',
+          'args': [
+            [
+              ['name', '=', orderId]
+            ]
+          ],
+          'kwargs': {},
+        });
+
+        // developer.log(
+        //     'Odoo search result for $orderId: $searchResult (type: ${searchResult.runtimeType})');
+        return searchResult is List && searchResult.isNotEmpty;
+      } catch (searchError) {
+        developer.log('Fallback search failed for $orderId: $searchError',
+            error: searchError);
+        throw Exception('Failed to verify order ID uniqueness: $searchError');
+      }
+    }
+  }
+
   void showProductSelectionPage(BuildContext context) {
     final salesProvider =
         Provider.of<SalesOrderProvider>(context, listen: false);
     salesProvider.loadProducts().then((_) {
-      _availableProducts = salesProvider.products; // All products loaded
+      _availableProducts = salesProvider.products;
       print('Available products count: ${_availableProducts.length}');
       if (_availableProducts.isEmpty) {
         print('Warning: No products retrieved from server');
       }
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => MultiProductSelectionPage(
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        SlidingPageTransitionRL(
+          page: ProductSelectionPage(
             availableProducts: availableProducts,
             onAddProduct: (product, quantity) {
-              addProductFromList(context, product, quantity);
+              addProductFromList(product, quantity,
+                  salesProvider: salesProvider);
             },
           ),
         ),
+        (Route<dynamic> route) => false,
       );
     }).catchError((e) {
       print('Error loading products for page: $e');
@@ -493,7 +726,8 @@ class OrderPickingProvider with ChangeNotifier {
     }
   }
 
-  void addProductFromList(BuildContext context, Product product, int quantity) {
+  void addProductFromList(Product product, int quantity,
+      {required SalesOrderProvider salesProvider}) {
     final newProduct = ProductItem();
     newProduct.nameController.text = product.name;
     newProduct.quantityController.text = quantity.toString();
@@ -506,10 +740,8 @@ class OrderPickingProvider with ChangeNotifier {
     _products.add(newProduct);
     _isProductListVisible = false;
 
-    final provider = Provider.of<SalesOrderProvider>(context, listen: false);
     if (product.vanInventory > 0) {
-      // Only update inventory if there's stock
-      provider.updateInventory(product.id, quantity);
+      salesProvider.updateInventory(product.id, quantity);
     }
     notifyListeners();
   }
@@ -544,7 +776,7 @@ class OrderPickingProvider with ChangeNotifier {
                   'category': product.selectedCategory,
                   'urgency': product.selectedUrgency,
                   'notes': product.notesController.text,
-                  'stock_quantity': product.stockQuantity, // Include stock info
+                  'stock_quantity': product.stockQuantity,
                 })
             .toList(),
         'additional_notes': notesController.text,
@@ -604,7 +836,7 @@ class OrderPickingProvider with ChangeNotifier {
   void toggleProductListVisibility(BuildContext context) {
     final provider = Provider.of<SalesOrderProvider>(context, listen: false);
     provider.loadProducts().then((_) {
-      _availableProducts = provider.products; // All products loaded
+      _availableProducts = provider.products;
       _isProductListVisible = !_isProductListVisible;
       notifyListeners();
     });

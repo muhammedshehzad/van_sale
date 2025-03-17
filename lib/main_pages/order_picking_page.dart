@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../provider_and_models/order_picking_provider.dart';
 import '../provider_and_models/sales_order_provider.dart';
 
-const double kBorderRadius = 8.0;
 
 class OrderTakingPage extends StatefulWidget {
   const OrderTakingPage({Key? key}) : super(key: key);
@@ -656,17 +655,21 @@ class _OrderTakingPageState extends State<OrderTakingPage> {
   }
 }
 
-// Assuming ProductItem and ProductCard remain unchanged unless needed
+
 class ProductItem {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
   final TextEditingController notesController = TextEditingController();
+  final TextEditingController salePriceController = TextEditingController();
+  final TextEditingController costController = TextEditingController();
+  final TextEditingController barcodeController = TextEditingController();
   String? imageUrl;
+  String selectedProductType = 'product';
   String selectedUnit = 'Pieces';
   String selectedCategory = 'General';
   String selectedUrgency = 'Normal';
   int stockQuantity = 0;
-
+  int? odooId;
   final List<String> units = ['Pieces', 'Kg', 'Liters', 'Boxes', 'Packets'];
   final List<String> categories = [
     'General',
