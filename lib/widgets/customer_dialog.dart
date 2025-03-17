@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:developer';
-import '../provider_and_models/odoo_session_model.dart';
+import '../provider_and_models/cyllo_session_model.dart';
 import '../provider_and_models/order_picking_provider.dart';
 import '../provider_and_models/sales_order_provider.dart';
 

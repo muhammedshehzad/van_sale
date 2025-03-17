@@ -1,7 +1,7 @@
 import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class OdooSessionModel {
+class CylloSessionModel {
   final String userName;
   final String userLogin;
   final int userId;
@@ -15,7 +15,7 @@ class OdooSessionModel {
   final String serverUrl;
   final String database;
 
-  OdooSessionModel({
+  CylloSessionModel({
     required this.userName,
     required this.userLogin,
     required this.userId,
@@ -30,9 +30,9 @@ class OdooSessionModel {
     required this.database,
   });
 
-  factory OdooSessionModel.fromOdooSession(
+  factory CylloSessionModel.fromOdooSession(
       OdooSession session, String password, String serverUrl, String database) {
-    return OdooSessionModel(
+    return CylloSessionModel(
       userName: session.userName ?? '',
       userLogin: session.userLogin?.toString() ?? '',
       userId: session.userId ?? 0,
@@ -48,8 +48,8 @@ class OdooSessionModel {
     );
   }
 
-  factory OdooSessionModel.fromPrefs(SharedPreferences prefs) {
-    return OdooSessionModel(
+  factory CylloSessionModel.fromPrefs(SharedPreferences prefs) {
+    return CylloSessionModel(
       userName: prefs.getString('userName') ?? '',
       userLogin: prefs.getString('userLogin') ?? '',
       userId: prefs.getInt('userId') ?? 0,
@@ -96,7 +96,7 @@ class OdooSessionModel {
 }
 
 class SessionManager {
-  static Future<OdooSessionModel?> getCurrentSession() async {
+  static Future<CylloSessionModel?> getCurrentSession() async {
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
 
@@ -104,7 +104,7 @@ class SessionManager {
       return null;
     }
 
-    return OdooSessionModel.fromPrefs(prefs);
+    return CylloSessionModel.fromPrefs(prefs);
   }
 
   static Future<OdooClient?> getActiveClient() async {
