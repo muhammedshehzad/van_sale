@@ -36,6 +36,15 @@ class OrderPickingProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool _needsProductRefresh = false;
+
+  bool get needsProductRefresh => _needsProductRefresh;
+
+  void resetProductRefreshFlag() {
+    _needsProductRefresh = false;
+    notifyListeners();
+  }
+
   final TextEditingController shopNameController = TextEditingController();
   final TextEditingController shopLocationController = TextEditingController();
   final TextEditingController contactPersonController = TextEditingController();
@@ -289,7 +298,6 @@ class OrderPickingProvider with ChangeNotifier {
                                 throw Exception(
                                     'No active Odoo session found. Please log in again.');
                               }
-
                               final productData = {
                                 'name': nameController.text,
                                 'default_code':
@@ -334,7 +342,6 @@ class OrderPickingProvider with ChangeNotifier {
 
                               newProduct.odooId = productId;
                               _products.add(newProduct);
-                              notifyListeners();
 
                               final salesProvider =
                                   Provider.of<SalesOrderProvider>(context,
@@ -342,24 +349,28 @@ class OrderPickingProvider with ChangeNotifier {
                               try {
                                 await salesProvider.loadProducts();
                                 _availableProducts = salesProvider.products;
+                                _needsProductRefresh = true;
                                 notifyListeners();
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Product added successfully to Odoo (ID: $productId)'),
+                                    backgroundColor: Colors.green,
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
                               } catch (e) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                      content: Text(
-                                          'Failed to refresh products: $e'),
-                                      backgroundColor: Colors.red),
+                                    content:
+                                        Text('Failed to refresh products: $e'),
+                                    backgroundColor: Colors.red,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
                                 );
                               }
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Product added successfully to Odoo (ID: $productId)'),
-                                  backgroundColor: Colors.green,
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -367,6 +378,7 @@ class OrderPickingProvider with ChangeNotifier {
                                       Text('Failed to add product to Odoo: $e'),
                                   backgroundColor: Colors.red,
                                   duration: const Duration(seconds: 3),
+                                  behavior: SnackBarBehavior.floating,
                                 ),
                               );
                             }
@@ -395,7 +407,7 @@ class OrderPickingProvider with ChangeNotifier {
                         ),
                       ),
                     ],
-                  ),
+                  )
                 ],
               ),
             ),

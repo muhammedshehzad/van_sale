@@ -531,7 +531,7 @@ class SaleOrderPage extends StatelessWidget {
                       onPressed: () {
                         salesOrderProvider.clearOrder();
                         salesOrderProvider.resetInventory();
-                        salesOrderProvider.notifyOrderConfirmed();
+                        // salesOrderProvider.notifyOrderConfirmed();
                         onClearSelections?.call();
                         Navigator.of(context).pop();
                         Navigator.popUntil(context, (route) => route.isFirst);
