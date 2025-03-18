@@ -4,7 +4,6 @@ import 'dart:developer';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main_pages/order_picking_page.dart';
-import '../secondary_pages/summary_page.dart';
 import '../widgets/customer_dialog.dart';
 import '../widgets/page_transition.dart';
 import 'cyllo_session_model.dart';
@@ -114,9 +113,12 @@ class OrderPickingProvider with ChangeNotifier {
   }
 
   void addNewProduct(BuildContext context) async {
-    showDialog(
+    showGeneralDialog(
       context: context,
-      builder: (BuildContext context) {
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, animation, secondaryAnimation) {
         final nameController = TextEditingController();
         final quantityController = TextEditingController();
         final salePriceController = TextEditingController();
@@ -411,6 +413,21 @@ class OrderPickingProvider with ChangeNotifier {
                 ],
               ),
             ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut,
+          ).drive(Tween<double>(begin: 0.8, end: 1.0)),
+          child: FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeIn,
+            ),
+            child: child,
           ),
         );
       },
@@ -763,61 +780,61 @@ class OrderPickingProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void submitForm(BuildContext context) async {
-    if (formKey.currentState!.validate() && _products.isNotEmpty) {
-      final orderId = _currentOrderId ?? await generateOrderId();
-
-      Map<String, dynamic> formData = {
-        'order_id': orderId,
-        'shop_info': {
-          'name': shopNameController.text,
-          'location': shopLocationController.text,
-          'contact_person': contactPersonController.text,
-          'contact_number': contactNumberController.text,
-        },
-        'delivery_info': {
-          'date': DateFormat('yyyy-MM-dd').format(_deliveryDate),
-          'priority': _priority,
-          'slot': _deliverySlot,
-        },
-        'products': _products
-            .map((product) => {
-                  'name': product.nameController.text,
-                  'quantity': int.parse(product.quantityController.text),
-                  'unit': product.selectedUnit,
-                  'category': product.selectedCategory,
-                  'urgency': product.selectedUrgency,
-                  'notes': product.notesController.text,
-                  'stock_quantity': product.stockQuantity,
-                })
-            .toList(),
-        'additional_notes': notesController.text,
-      };
-
-      print('Generated Order ID: $orderId');
-      print(formData);
-
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => FormSummaryPage(formData: formData),
-        ),
-      );
-    } else if (_products.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          padding: const EdgeInsets.all(16),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          margin: const EdgeInsets.all(10),
-          duration: const Duration(seconds: 2),
-          content: const Text('Please add at least one product'),
-          backgroundColor: primaryColor,
-        ),
-      );
-    }
-  }
+  // void submitForm(BuildContext context) async {
+  //   if (formKey.currentState!.validate() && _products.isNotEmpty) {
+  //     final orderId = _currentOrderId ?? await generateOrderId();
+  //
+  //     Map<String, dynamic> formData = {
+  //       'order_id': orderId,
+  //       'shop_info': {
+  //         'name': shopNameController.text,
+  //         'location': shopLocationController.text,
+  //         'contact_person': contactPersonController.text,
+  //         'contact_number': contactNumberController.text,
+  //       },
+  //       'delivery_info': {
+  //         'date': DateFormat('yyyy-MM-dd').format(_deliveryDate),
+  //         'priority': _priority,
+  //         'slot': _deliverySlot,
+  //       },
+  //       'products': _products
+  //           .map((product) => {
+  //                 'name': product.nameController.text,
+  //                 'quantity': int.parse(product.quantityController.text),
+  //                 'unit': product.selectedUnit,
+  //                 'category': product.selectedCategory,
+  //                 'urgency': product.selectedUrgency,
+  //                 'notes': product.notesController.text,
+  //                 'stock_quantity': product.stockQuantity,
+  //               })
+  //           .toList(),
+  //       'additional_notes': notesController.text,
+  //     };
+  //
+  //     print('Generated Order ID: $orderId');
+  //     print(formData);
+  //
+  //     Navigator.of(context).push(
+  //       MaterialPageRoute(
+  //         builder: (context) => FormSummaryPage(formData: formData),
+  //       ),
+  //     );
+  //   } else if (_products.isEmpty) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //         padding: const EdgeInsets.all(16),
+  //         behavior: SnackBarBehavior.floating,
+  //         shape: RoundedRectangleBorder(
+  //           borderRadius: BorderRadius.circular(8),
+  //         ),
+  //         margin: const EdgeInsets.all(10),
+  //         duration: const Duration(seconds: 2),
+  //         content: const Text('Please add at least one product'),
+  //         backgroundColor: primaryColor,
+  //       ),
+  //     );
+  //   }
+  // }
 
   Future<void> selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(

@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../main_pages/order_picking_page.dart';
 import '../provider_and_models/cyllo_session_model.dart';
 import '../provider_and_models/order_picking_provider.dart';
-import '../provider_and_models/sales_order_provider.dart';
 import '../widgets/snackbar.dart';
 
 class Login extends StatefulWidget {
@@ -84,6 +82,10 @@ class _LoginState extends State<Login> {
               Provider.of<OrderPickingProvider>(context, listen: false);
 
           provider.showProductSelectionPage(context);
+          setState(() {
+            isLoading = false;
+            disableFields = false;
+          });
         } else {
           setState(() {
             errorMessage = 'Authentication failed: No session returned.';
@@ -217,240 +219,300 @@ class _LoginState extends State<Login> {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      backgroundColor: backgroundColor,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 120,
-                  child: Center(
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: primaryColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.local_shipping_rounded,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+      body: Stack(
+        children: [
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('lib/assets/mainlogo.jpeg'),
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withOpacity(0.3),
+                  BlendMode.darken,
                 ),
-                Container(
-                  padding: const EdgeInsets.all(24.0),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: neutralGrey.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Form(
-                    key: formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Sign In",
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "Enter your details to continue",
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: neutralGrey,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        if (frstLogin == true) ...[
-                          _buildClassicTextField(
-                            controller: urlController,
-                            label: "Server URL",
-                            icon: Icons.dns_rounded,
-                            color: primaryColor,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Enter a URL';
-                              }
-                              final RegExp newReg = RegExp(
-                                r'^(https?:\/\/)'
-                                r'(([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}'
-                                r'|(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))'
-                                r'(:\d{1,5})?'
-                                r'(\/[^\s]*)?$',
-                                caseSensitive: false,
-                              );
-                              if (!newReg.hasMatch(value)) {
-                                return 'Enter a valid URL';
-                              }
-                              return null;
-                            },
-                            onChanged: (value) {
-                              fetchDatabaseList();
-                            },
-                            enabled: !disableFields,
-                          ),
-                          const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            decoration: _buildClassicInputDecoration(
-                              label: "Database",
-                              icon: Icons.storage_rounded,
-                              color: primaryColor,
-                            ),
-                            dropdownColor: Colors.white,
-                            icon: Icon(Icons.arrow_drop_down,
-                                color: primaryColor),
-                            isExpanded: true,
-                            hint: const Text("Select a database"),
-                            value: Database,
-                            items: urlCheck ? dropdownItems : [],
-                            onChanged: disableFields
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      Database = value;
-                                    });
-                                  },
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return "Database is required";
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        _buildClassicTextField(
-                          controller: emailController,
-                          label: "Email",
-                          icon: Icons.email_outlined,
-                          color: primaryColor,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return "Email is required";
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        _buildClassicTextField(
-                          controller: passwordController,
-                          label: "Password",
-                          icon: Icons.lock_outline,
-                          color: primaryColor,
-                          obscureText: true,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return "Password is required";
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: isLoading
-                                ? null
-                                : () {
-                                    if (Database == null && frstLogin == true) {
-                                      errorMessage = 'Choose Database first';
-                                      final snackBar =
-                                          CustomSnackbar().showSnackBar(
-                                        "error",
-                                        errorMessage!,
-                                        "Select",
-                                        () {
-                                          print("Select database pressed");
-                                        },
-                                      );
-                                      // ScaffoldMessenger.of(context)
-                                      //     .showSnackBar(snackBar);
-                                    } else {
-                                      saveLogin();
-                                      login();
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              elevation: 1,
-                            ),
-                            child: isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text(
-                                    'Sign In',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Center(
-                          child: TextButton(
-                            onPressed: () {
-                              setState(() {
-                                frstLogin = !frstLogin!;
-                              });
-                            },
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 6,
-                                horizontal: 12,
-                              ),
-                            ),
-                            child: Text(
-                              frstLogin == true
-                                  ? 'Hide Database Options'
-                                  : 'Manage Database',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: primaryDarkColor,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
+              ),
             ),
           ),
-        ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: MediaQuery.of(context).size.width * 0.05,
+                        vertical: 16.0,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            margin: EdgeInsets.only(
+                              top: MediaQuery.of(context).size.height * 0.05,
+                            ),
+                            height: 120,
+                            child: Center(
+                              child: Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  color: primaryColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.local_shipping_rounded,
+                                  size: 48,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Form Container
+                          Container(
+                            constraints: BoxConstraints(
+                              maxWidth: 500,
+                            ),
+                            padding: const EdgeInsets.all(24.0),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: neutralGrey.withOpacity(0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Form(
+                              key: formKey,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    "Sign In",
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    "Enter your details to continue",
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: neutralGrey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  if (frstLogin == true) ...[
+                                    _buildClassicTextField(
+                                      controller: urlController,
+                                      label: "Server URL",
+                                      icon: Icons.dns_rounded,
+                                      color: primaryColor,
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return 'Enter a URL';
+                                        }
+                                        final RegExp newReg = RegExp(
+                                          r'^(https?:\/\/)'
+                                          r'(([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}'
+                                          r'|(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))'
+                                          r'(:\d{1,5})?'
+                                          r'(\/[^\s]*)?$',
+                                          caseSensitive: false,
+                                        );
+                                        if (!newReg.hasMatch(value)) {
+                                          return 'Enter a valid URL';
+                                        }
+                                        return null;
+                                      },
+                                      onChanged: (value) {
+                                        fetchDatabaseList();
+                                      },
+                                      enabled: !disableFields,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    DropdownButtonFormField<String>(
+                                      decoration: _buildClassicInputDecoration(
+                                        label: "Database",
+                                        icon: Icons.storage_rounded,
+                                        color: primaryColor,
+                                      ),
+                                      dropdownColor: Colors.white,
+                                      icon: Icon(Icons.arrow_drop_down,
+                                          color: primaryColor),
+                                      isExpanded: true,
+                                      hint: const Text("Select a database"),
+                                      value: Database,
+                                      items: urlCheck ? dropdownItems : [],
+                                      onChanged: disableFields
+                                          ? null
+                                          : (value) {
+                                              setState(() {
+                                                Database = value;
+                                              });
+                                            },
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty) {
+                                          return "Database is required";
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  _buildClassicTextField(
+                                    controller: emailController,
+                                    label: "Email",
+                                    icon: Icons.email_outlined,
+                                    color: primaryColor,
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return "Email is required";
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildClassicTextField(
+                                    controller: passwordController,
+                                    label: "Password",
+                                    icon: Icons.lock_outline,
+                                    color: primaryColor,
+                                    obscureText: true,
+                                    validator: (value) {
+                                      if (value == null || value.isEmpty) {
+                                        return "Password is required";
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 24),
+                                  SizedBox(
+                                    height: 48,
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          isLoading ? null : _handleSignIn,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: primaryColor,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        elevation: 1,
+                                      ),
+                                      child: isLoading
+                                          ? const SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Text(
+                                              'Sign In',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Center(
+                                    child: TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          frstLogin = !frstLogin!;
+                                        });
+                                      },
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                          horizontal: 16,
+                                        ),
+                                        backgroundColor:
+                                            primaryColor.withOpacity(0.05),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        frstLogin == true
+                                            ? 'Hide Database Options'
+                                            : 'Manage Database',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: primaryDarkColor,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Version Text
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24.0),
+                            child: Text(
+                              "Van Sale App: version 1.0.3",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.white,
+                                shadows: [
+                                  Shadow(
+                                    offset: Offset(0, 1),
+                                    blurRadius: 2.0,
+                                    color: Colors.black.withOpacity(0.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  void _handleSignIn() {
+    if (Database == null && frstLogin == true) {
+      errorMessage = 'Choose Database first';
+      final snackBar = CustomSnackbar().showSnackBar(
+        "error",
+        errorMessage!,
+        "Select",
+        () {
+          print("Select database pressed");
+        },
+      );
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    } else {
+      saveLogin();
+      login();
+    }
   }
 
   Widget _buildClassicTextField({
