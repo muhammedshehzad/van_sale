@@ -201,7 +201,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                     return ListView.separated(
                       itemCount: _filteredOrders.length,
                       separatorBuilder: (context, index) =>
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         final order = _filteredOrders[index];
                         final orderId = order['name'] as String;
@@ -215,7 +215,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
 
                         return Card(
                           color: Colors.white,
-                          elevation: 1,
+                          elevation: 2,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(kBorderRadius),
                           ),
@@ -344,4 +344,3 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
     }
   }
 }
-

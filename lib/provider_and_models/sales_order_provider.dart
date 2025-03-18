@@ -207,10 +207,6 @@ class SalesOrderProvider with ChangeNotifier {
     }
   }
 
-  void notifyOrderConfirmed() {
-    notifyListeners();
-  }
-
   void clearConfirmedOrderIds() {
     _confirmedOrderIds.clear();
     notifyListeners();
