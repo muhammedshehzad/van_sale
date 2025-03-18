@@ -624,24 +624,24 @@ class _OrderTakingPageState extends State<OrderTakingPage> {
                       SizedBox(
                         width: double.infinity,
                         height: 50,
-                        child: ElevatedButton(
-                          onPressed: () => provider.submitForm(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text(
-                            'Take Order',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
+                        // child: ElevatedButton(
+                        //   onPressed: () => provider.submitForm(context),
+                        //   style: ElevatedButton.styleFrom(
+                        //     backgroundColor: primaryColor,
+                        //     foregroundColor: Colors.white,
+                        //     shape: RoundedRectangleBorder(
+                        //       borderRadius: BorderRadius.circular(8),
+                        //     ),
+                        //   ),
+                        //   child: const Text(
+                        //     'Take Order',
+                        //     style: TextStyle(
+                        //       fontSize: 16,
+                        //       fontWeight: FontWeight.bold,
+                        //       letterSpacing: 0.5,
+                        //     ),
+                        //   ),
+                        // ),
                       ),
                     ],
                   ),
