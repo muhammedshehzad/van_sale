@@ -444,7 +444,7 @@ class _DeliveriesPageState extends State<DeliveriesPage> {
   }
 }
 
-// Delivery Details Page
+
 class DeliveryDetailsPage extends StatefulWidget {
   final Map<String, String> delivery;
 

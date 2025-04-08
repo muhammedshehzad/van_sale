@@ -22,6 +22,7 @@ class _LoginState extends State<Login> {
 
   String? errorMessage;
   bool isLoading = false;
+  bool isLoadingDatabases = false;
   List<DropdownMenuItem<String>> dropdownItems = [];
   OdooClient? client;
   TextEditingController urlController =
@@ -44,6 +45,7 @@ class _LoginState extends State<Login> {
           setState(() {
             errorMessage = 'No database selected.';
             disableFields = false;
+            isLoading = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -82,14 +84,11 @@ class _LoginState extends State<Login> {
               Provider.of<OrderPickingProvider>(context, listen: false);
 
           provider.showProductSelectionPage(context);
-          setState(() {
-            isLoading = false;
-            disableFields = false;
-          });
         } else {
           setState(() {
             errorMessage = 'Authentication failed: No session returned.';
             disableFields = false;
+            isLoading = false;
             ScaffoldMessenger.of(context)
                 .showSnackBar(SnackBar(content: Text('$errorMessage')));
           });
@@ -97,6 +96,8 @@ class _LoginState extends State<Login> {
       } on OdooException {
         setState(() {
           errorMessage = 'Invalid username or password.';
+          isLoading = false;
+          disableFields = false;
           final snackBar = CustomSnackbar()
               .showSnackBar("error", '$errorMessage', "error", () {});
           ScaffoldMessenger.of(context).showSnackBar(snackBar);
@@ -104,14 +105,11 @@ class _LoginState extends State<Login> {
       } catch (e) {
         setState(() {
           errorMessage = 'Network Error';
+          isLoading = false;
+          disableFields = false;
           final snackBar = CustomSnackbar()
               .showSnackBar("error", '$errorMessage', "error", () {});
           ScaffoldMessenger.of(context).showSnackBar(snackBar);
-        });
-      } finally {
-        setState(() {
-          isLoading = false;
-          disableFields = false;
         });
       }
     }
@@ -152,73 +150,94 @@ class _LoginState extends State<Login> {
   }
 
   Future<String?> loginCheck() async {
+    setState(() {
+      isLoading = true; // Show loading indicator during initial setup
+    });
+
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString('urldata');
-    print(savedUrl);
     final savedDb = prefs.getString('database');
-    print(savedDb);
 
     if (savedUrl != null && savedDb != null && savedDb.isNotEmpty) {
       setState(() {
+        urlController.text = savedUrl;
         frstLogin = false;
         Database = savedDb;
       });
     } else {
       setState(() {
         frstLogin = true;
+        Database = null; // Ensure Database is null if no valid saved value
       });
     }
+
+    setState(() {
+      isLoading = false;
+    });
   }
 
   Future<void> fetchDatabaseList() async {
     setState(() {
-      isLoading = true;
+      isLoadingDatabases = true;
       urlCheck = false;
     });
 
     try {
       final baseUrl = urlController.text.trim();
-      print(baseUrl);
       client = OdooClient(baseUrl);
       final response = await client!.callRPC('/web/database/list', 'call', {});
       final dbList = response as List<dynamic>;
+
+      final uniqueDbList = dbList.toSet().toList();
       setState(() {
-        dropdownItems = dbList
+        dropdownItems = uniqueDbList
             .map((db) => DropdownMenuItem<String>(
-                  value: db,
-                  child: Text(db),
+                  value: db.toString(),
+                  child: Text(db.toString()),
                 ))
             .toList();
         urlCheck = true;
         errorMessage = null;
+
+        if (Database != null && !uniqueDbList.contains(Database)) {
+          Database = null;
+        }
       });
     } catch (e) {
       setState(() {
         errorMessage = 'Error fetching database list: $e';
         Database = null;
         urlCheck = false;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Could not connect to server. Please verify the URL.'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
       });
     } finally {
       setState(() {
-        isLoading = false;
+        isLoadingDatabases = false;
       });
     }
   }
 
   @override
   void initState() {
-    loginCheck();
-    if (urlController.text.isNotEmpty) {
-      fetchDatabaseList();
-    }
-    // TODO: implement initState
     super.initState();
+    loginCheck().then((_) {
+      if (urlController.text.isNotEmpty) {
+        fetchDatabaseList();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Container(
@@ -289,181 +308,282 @@ class _LoginState extends State<Login> {
                                 ),
                               ],
                             ),
-                            child: Form(
-                              key: formKey,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text(
-                                    "Sign In",
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: textColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    "Enter your details to continue",
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: neutralGrey,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 24),
-                                  if (frstLogin == true) ...[
-                                    _buildClassicTextField(
-                                      controller: urlController,
-                                      label: "Server URL",
-                                      icon: Icons.dns_rounded,
-                                      color: primaryColor,
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Enter a URL';
-                                        }
-                                        final RegExp newReg = RegExp(
-                                          r'^(https?:\/\/)'
-                                          r'(([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}'
-                                          r'|(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))'
-                                          r'(:\d{1,5})?'
-                                          r'(\/[^\s]*)?$',
-                                          caseSensitive: false,
-                                        );
-                                        if (!newReg.hasMatch(value)) {
-                                          return 'Enter a valid URL';
-                                        }
-                                        return null;
-                                      },
-                                      onChanged: (value) {
-                                        fetchDatabaseList();
-                                      },
-                                      enabled: !disableFields,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    DropdownButtonFormField<String>(
-                                      decoration: _buildClassicInputDecoration(
-                                        label: "Database",
-                                        icon: Icons.storage_rounded,
-                                        color: primaryColor,
-                                      ),
-                                      dropdownColor: Colors.white,
-                                      icon: Icon(Icons.arrow_drop_down,
-                                          color: primaryColor),
-                                      isExpanded: true,
-                                      hint: const Text("Select a database"),
-                                      value: Database,
-                                      items: urlCheck ? dropdownItems : [],
-                                      onChanged: disableFields
-                                          ? null
-                                          : (value) {
-                                              setState(() {
-                                                Database = value;
-                                              });
-                                            },
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return "Database is required";
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
-                                  _buildClassicTextField(
-                                    controller: emailController,
-                                    label: "Email",
-                                    icon: Icons.email_outlined,
-                                    color: primaryColor,
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return "Email is required";
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildClassicTextField(
-                                    controller: passwordController,
-                                    label: "Password",
-                                    icon: Icons.lock_outline,
-                                    color: primaryColor,
-                                    obscureText: true,
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return "Password is required";
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 24),
-                                  SizedBox(
-                                    height: 48,
-                                    child: ElevatedButton(
-                                      onPressed:
-                                          isLoading ? null : _handleSignIn,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: primaryColor,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                            child: isLoading && frstLogin == null
+                                ? Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CircularProgressIndicator(
+                                            color: primaryColor),
+                                        SizedBox(height: 16),
+                                        Text(
+                                          "Loading user settings...",
+                                          style: TextStyle(
+                                            color: textColor,
+                                            fontSize: 16,
+                                          ),
                                         ),
-                                        elevation: 1,
-                                      ),
-                                      child: isLoading
-                                          ? const SizedBox(
-                                              height: 20,
-                                              width: 20,
-                                              child: CircularProgressIndicator(
-                                                color: Colors.white,
-                                                strokeWidth: 2,
+                                      ],
+                                    ),
+                                  )
+                                : Form(
+                                    key: formKey,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                          "Sign In",
+                                          style: TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.bold,
+                                            color: textColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          "Enter your details to continue",
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: neutralGrey,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 24),
+                                        if (frstLogin == true) ...[
+                                          _buildClassicTextField(
+                                            controller: urlController,
+                                            label: "Server URL",
+                                            icon: Icons.dns_rounded,
+                                            color: primaryColor,
+                                            validator: (value) {
+                                              if (value == null ||
+                                                  value.isEmpty) {
+                                                return 'Enter a URL';
+                                              }
+                                              final RegExp newReg = RegExp(
+                                                r'^(https?:\/\/)'
+                                                r'(([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}'
+                                                r'|(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))'
+                                                r'(:\d{1,5})?'
+                                                r'(\/[^\s]*)?$',
+                                                caseSensitive: false,
+                                              );
+                                              if (!newReg.hasMatch(value)) {
+                                                return 'Enter a valid URL';
+                                              }
+                                              return null;
+                                            },
+                                            onChanged: (value) {
+                                              // Don't immediately trigger fetch to avoid multiple API calls
+                                              // We'll use a button instead
+                                            },
+                                            enabled: !disableFields &&
+                                                !isLoadingDatabases,
+                                            suffix: IconButton(
+                                              icon: Icon(
+                                                Icons.refresh,
+                                                color: primaryColor,
+                                                size: 20,
                                               ),
-                                            )
-                                          : const Text(
-                                              'Sign In',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.white,
+                                              onPressed: isLoadingDatabases
+                                                  ? null
+                                                  : fetchDatabaseList,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          // Database loading indicator
+                                          if (isLoadingDatabases)
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 8.0),
+                                              child: Row(
+                                                children: [
+                                                  SizedBox(
+                                                    height: 16,
+                                                    width: 16,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: primaryColor,
+                                                    ),
+                                                  ),
+                                                  SizedBox(width: 12),
+                                                  Text(
+                                                    "Fetching databases...",
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: primaryColor,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
+                                          const SizedBox(height: 8),
+                                          DropdownButtonFormField<String>(
+                                            decoration:
+                                                _buildClassicInputDecoration(
+                                              label: "Database",
+                                              icon: Icons.storage_rounded,
+                                              color: primaryColor,
+                                            ),
+                                            dropdownColor: Colors.white,
+                                            icon: Icon(Icons.arrow_drop_down,
+                                                color: primaryColor),
+                                            isExpanded: true,
+                                            hint: Text(isLoadingDatabases
+                                                ? "Loading databases..."
+                                                : "Select a database"),
+                                            value: Database,
+                                            items: urlCheck &&
+                                                    dropdownItems.isNotEmpty
+                                                ? dropdownItems
+                                                : [],
+                                            onChanged: (disableFields ||
+                                                    isLoadingDatabases)
+                                                ? null
+                                                : (value) {
+                                                    setState(() {
+                                                      Database = value;
+                                                    });
+                                                  },
+                                            validator: (value) {
+                                              if (value == null ||
+                                                  value.isEmpty) {
+                                                return "Database is required";
+                                              }
+                                              return null;
+                                            },
+                                          ),
+                                          const SizedBox(height: 16),
+                                        ],
+                                        _buildClassicTextField(
+                                          controller: emailController,
+                                          label: "Email",
+                                          icon: Icons.email_outlined,
+                                          color: primaryColor,
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.isEmpty) {
+                                              return "Email is required";
+                                            }
+                                            return null;
+                                          },
+                                          enabled: !disableFields,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _buildClassicTextField(
+                                          controller: passwordController,
+                                          label: "Password",
+                                          icon: Icons.lock_outline,
+                                          color: primaryColor,
+                                          obscureText: true,
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.isEmpty) {
+                                              return "Password is required";
+                                            }
+                                            return null;
+                                          },
+                                          enabled: !disableFields,
+                                        ),
+                                        const SizedBox(height: 24),
+                                        SizedBox(
+                                          height: 48,
+                                          child: ElevatedButton(
+                                            onPressed:
+                                                isLoading || isLoadingDatabases
+                                                    ? null
+                                                    : _handleSignIn,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: primaryColor,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              elevation: 1,
+                                            ),
+                                            child: isLoading
+                                                ? Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      SizedBox(
+                                                        height: 20,
+                                                        width: 20,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                          color: Colors.white,
+                                                          strokeWidth: 2,
+                                                        ),
+                                                      ),
+                                                      SizedBox(width: 12),
+                                                      Text(
+                                                        'Signing In...',
+                                                        style: TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                                : const Text(
+                                                    'Sign In',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Center(
+                                          child: TextButton(
+                                            onPressed: (isLoading ||
+                                                    isLoadingDatabases)
+                                                ? null
+                                                : () {
+                                                    setState(() {
+                                                      frstLogin = !frstLogin!;
+                                                      // If showing database options, attempt to fetch databases
+                                                      if (frstLogin == true) {
+                                                        fetchDatabaseList();
+                                                      }
+                                                    });
+                                                  },
+                                            style: TextButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                vertical: 10,
+                                                horizontal: 16,
+                                              ),
+                                              backgroundColor: primaryColor
+                                                  .withOpacity(0.05),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              frstLogin == true
+                                                  ? 'Hide Database Options'
+                                                  : 'Manage Database',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: primaryDarkColor,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
-                                  Center(
-                                    child: TextButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          frstLogin = !frstLogin!;
-                                        });
-                                      },
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 10,
-                                          horizontal: 16,
-                                        ),
-                                        backgroundColor:
-                                            primaryColor.withOpacity(0.05),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        frstLogin == true
-                                            ? 'Hide Database Options'
-                                            : 'Manage Database',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: primaryDarkColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ),
                           // Version Text
                           Padding(
@@ -492,6 +612,43 @@ class _LoginState extends State<Login> {
               },
             ),
           ),
+          // Full-screen loading overlay
+          if (disableFields && isLoading)
+            Container(
+              color: Colors.black45,
+              child: Center(
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: primaryColor),
+                        SizedBox(height: 16),
+                        Text(
+                          "Connecting to server...",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          "Please wait while we log you in",
+                          style: TextStyle(
+                            color: neutralGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -524,6 +681,7 @@ class _LoginState extends State<Login> {
     FormFieldValidator<String>? validator,
     ValueChanged<String>? onChanged,
     bool enabled = true,
+    Widget? suffix,
   }) {
     return TextFormField(
       controller: controller,
@@ -535,6 +693,7 @@ class _LoginState extends State<Login> {
         label: label,
         icon: icon,
         color: color,
+        suffix: suffix,
       ),
       style: TextStyle(
         fontSize: 15,
@@ -547,10 +706,12 @@ class _LoginState extends State<Login> {
     required String label,
     required IconData icon,
     required Color color,
+    Widget? suffix,
   }) {
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon, color: color, size: 20),
+      suffixIcon: suffix,
       labelStyle: TextStyle(color: Color(0xFF757575)),
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       border: OutlineInputBorder(

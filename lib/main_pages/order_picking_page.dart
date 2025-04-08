@@ -669,6 +669,7 @@ class ProductItem {
   String selectedCategory = 'General';
   String selectedUrgency = 'Normal';
   int stockQuantity = 0;
+
   int? odooId;
   final List<String> units = ['Pieces', 'Kg', 'Liters', 'Boxes', 'Packets'];
   final List<String> categories = [

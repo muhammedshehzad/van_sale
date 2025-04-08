@@ -18,6 +18,7 @@ class Product with CustomDropdownListFilter {
   final dynamic categId;
   final dynamic propertyStockProduction;
   final dynamic propertyStockInventory;
+  final List<ProductAttribute>? attributes;
 
   Product({
     required this.id,
@@ -31,6 +32,7 @@ class Product with CustomDropdownListFilter {
     this.categId,
     this.propertyStockProduction,
     this.propertyStockInventory,
+    this.attributes,
   });
 
   @override
@@ -42,6 +44,14 @@ class Product with CustomDropdownListFilter {
         (defaultCode != null &&
             defaultCode!.toLowerCase().contains(lowercaseQuery));
   }
+}
+
+class ProductAttribute {
+  final String name;
+  final List<String> values;
+  final Map<String, double>? extraCost; // e.g., {"Black": 2.0, "White": 1.0}
+
+  ProductAttribute({required this.name, required this.values, this.extraCost});
 }
 
 class Customer with CustomDropdownListFilter {
@@ -73,13 +83,35 @@ class Customer with CustomDropdownListFilter {
 class OrderItem {
   final Product product;
   int quantity;
+  final Map<String, List<Map<String, dynamic>>>? productAttributes;
 
   OrderItem({
     required this.product,
     required this.quantity,
+    this.productAttributes,
   });
 
-  double get subtotal => product.price * quantity;
+  double get subtotal {
+    double total = 0;
+    final attributes = productAttributes?[product.id];
+    if (attributes != null && attributes.isNotEmpty) {
+      for (var combo in attributes) {
+        final qty = combo['quantity'] as int;
+        final attrs = combo['attributes'] as Map<String, String>;
+        double extraCost = 0;
+        for (var attr in product.attributes ?? []) {
+          final value = attrs[attr.name];
+          if (value != null && attr.extraCost != null) {
+            extraCost += attr.extraCost![value] ?? 0;
+          }
+        }
+        total += (product.price + extraCost) * qty;
+      }
+    } else {
+      total = product.price * quantity;
+    }
+    return total;
+  }
 }
 
 class SalesOrder {
@@ -255,96 +287,226 @@ class SalesOrderProvider with ChangeNotifier {
 
     try {
       final client = await SessionManager.getActiveClient();
-      if (client != null) {
-        final result = await client.callKw({
-          'model': 'product.product',
-          'method': 'search_read',
-          'args': [
-            [
-              ['product_tmpl_id.detailed_type', '=', 'product']
-            ]
+      if (client == null) {
+        throw Exception('No active Odoo session found. Please log in again.');
+      }
+
+      // Fetch product variants
+      final productResult = await client.callKw({
+        'model': 'product.product',
+        'method': 'search_read',
+        'args': [
+          [
+            ['product_tmpl_id.detailed_type', '=', 'product']
+          ]
+        ],
+        'kwargs': {
+          'fields': [
+            'id',
+            'name',
+            'list_price',
+            'qty_available',
+            'image_1920',
+            'default_code',
+            'seller_ids',
+            'taxes_id',
+            'categ_id',
+            'property_stock_production',
+            'property_stock_inventory',
+            'product_tmpl_id',
           ],
-          'kwargs': {
-            'fields': [
-              'id',
-              'name',
-              'list_price',
-              'qty_available',
-              'image_1920',
-              'default_code',
-              'seller_ids',
-              'taxes_id',
-              'categ_id',
-              'property_stock_production',
-              'property_stock_inventory',
-            ],
-          },
-        });
+        },
+      });
 
-        final List<Product> fetchedProducts =
-            (result as List).map((productData) {
-          String? imageUrl;
-          final imageData = productData['image_1920'];
+      // Fetch attribute lines for all product templates
+      final templateIds = (productResult as List)
+          .map((productData) => productData['product_tmpl_id'][0] as int)
+          .toSet()
+          .toList();
 
-          if (imageData != false &&
-              imageData is String &&
-              imageData.isNotEmpty) {
-            try {
-              base64Decode(imageData);
-              imageUrl = 'data:image/jpeg;base64,$imageData';
-            } catch (e) {
-              log("Invalid base64 image data for product ${productData['id']}: $e");
-              imageUrl = null;
-            }
+      final attributeLineResult = await client.callKw({
+        'model': 'product.template.attribute.line',
+        'method': 'search_read',
+        'args': [
+          [
+            ['product_tmpl_id', 'in', templateIds]
+          ]
+        ],
+        'kwargs': {
+          'fields': [
+            'product_tmpl_id',
+            'attribute_id',
+            'value_ids',
+          ],
+        },
+      });
+
+      // Fetch attribute names
+      final attributeIds = (attributeLineResult as List)
+          .map((attr) => attr['attribute_id'][0] as int)
+          .toSet()
+          .toList();
+      final attributeNames = await client.callKw({
+        'model': 'product.attribute',
+        'method': 'search_read',
+        'args': [
+          [
+            ['id', 'in', attributeIds]
+          ]
+        ],
+        'kwargs': {
+          'fields': ['id', 'name'],
+        },
+      });
+
+      // Fetch product template attribute values with price_extra
+      final templateAttributeValueResult = await client.callKw({
+        'model': 'product.template.attribute.value',
+        'method': 'search_read',
+        'args': [
+          [
+            ['product_tmpl_id', 'in', templateIds]
+          ]
+        ],
+        'kwargs': {
+          'fields': [
+            'product_tmpl_id',
+            'attribute_id',
+            'product_attribute_value_id',
+            'price_extra',
+          ],
+        },
+      });
+
+      // Fetch attribute values (just names)
+      final valueIds = (templateAttributeValueResult as List)
+          .map((attr) => attr['product_attribute_value_id'][0] as int)
+          .toSet()
+          .toList();
+      final attributeValues = await client.callKw({
+        'model': 'product.attribute.value',
+        'method': 'search_read',
+        'args': [
+          [
+            ['id', 'in', valueIds]
+          ]
+        ],
+        'kwargs': {
+          'fields': ['id', 'name'],
+        },
+      });
+
+      // Create lookup maps
+      final attributeNameMap = {
+        for (var attr in attributeNames) attr['id']: attr['name'] as String
+      };
+      final attributeValueMap = {
+        for (var val in attributeValues) val['id']: val['name'] as String
+      };
+
+      // Map template attribute values with extra costs
+      final templateAttributeValueMap = <int, Map<int, Map<int, Map<String, dynamic>>>>{};
+      for (var attrVal in templateAttributeValueResult) {
+        final templateId = attrVal['product_tmpl_id'][0] as int;
+        final attributeId = attrVal['attribute_id'][0] as int;
+        final valueId = attrVal['product_attribute_value_id'][0] as int; // Ensure int
+        final priceExtra = (attrVal['price_extra'] as num?)?.toDouble() ?? 0.0;
+
+        templateAttributeValueMap.putIfAbsent(templateId, () => {});
+        templateAttributeValueMap[templateId]!.putIfAbsent(attributeId, () => {});
+        templateAttributeValueMap[templateId]![attributeId]!.putIfAbsent(valueId, () => {});
+        templateAttributeValueMap[templateId]![attributeId]![valueId] = {
+          'name': attributeValueMap[valueId] ?? 'Unknown',
+          'price_extra': priceExtra,
+        };
+      }
+
+      // Map attributes by product template ID
+      final templateAttributes = <int, List<ProductAttribute>>{};
+      for (var attrLine in attributeLineResult) {
+        final templateId = attrLine['product_tmpl_id'][0] as int;
+        final attributeId = attrLine['attribute_id'][0] as int;
+        final valueIds = attrLine['value_ids'] as List;
+
+        final attributeName = attributeNameMap[attributeId] ?? 'Unknown';
+        final values = valueIds
+            .map((id) => attributeValueMap[id] ?? 'Unknown')
+            .toList()
+            .cast<String>();
+        final extraCosts = <String, double>{
+          for (var id in valueIds)
+            attributeValueMap[id as int]!: // Cast id to int
+            (templateAttributeValueMap[templateId]?[attributeId]?[id as int]?['price_extra'] as num?)?.toDouble() ?? 0.0
+        };
+
+        templateAttributes.putIfAbsent(templateId, () => []).add(
+          ProductAttribute(
+            name: attributeName,
+            values: values,
+            extraCost: extraCosts,
+          ),
+        );
+      }
+
+
+      final List<Product> fetchedProducts = (productResult as List).map((productData) {
+        String? imageUrl;
+        final imageData = productData['image_1920'];
+
+        if (imageData != false && imageData is String && imageData.isNotEmpty) {
+          try {
+            base64Decode(imageData);
+            imageUrl = 'data:image/jpeg;base64,$imageData';
+          } catch (e) {
+            log("Invalid base64 image data for product ${productData['id']}: $e");
+            imageUrl = null;
           }
+        }
 
-          String? defaultCode;
-          if (productData['default_code'] is String) {
-            defaultCode = productData['default_code'];
-          } else {
-            defaultCode = null;
-          }
+        String? defaultCode = productData['default_code'] is String
+            ? productData['default_code']
+            : null;
 
-          return Product(
-            id: productData['id'].toString(),
-            name: productData['name'] is String
-                ? productData['name']
-                : 'Unnamed Product',
-            price: (productData['list_price'] as num?)?.toDouble() ?? 0.0,
-            vanInventory: (productData['qty_available'] as num?)?.toInt() ?? 0,
-            imageUrl: imageUrl,
-            defaultCode: defaultCode,
-            sellerIds: productData['seller_ids'] is List
-                ? productData['seller_ids']
-                : [],
-            taxesIds:
-                productData['taxes_id'] is List ? productData['taxes_id'] : [],
-            categId: productData['categ_id'] ?? false,
-            propertyStockProduction:
-                productData['property_stock_production'] ?? false,
-            propertyStockInventory:
-                productData['property_stock_inventory'] ?? false,
-          );
-        }).toList();
+        final templateId = productData['product_tmpl_id'][0] as int;
+        final attributes = templateAttributes[templateId] ?? [];
 
-        fetchedProducts.sort(
-            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-        _products = fetchedProducts;
+        return Product(
+          id: productData['id'].toString(),
+          name: productData['name'] is String ? productData['name'] : 'Unnamed Product',
+          price: (productData['list_price'] as num?)?.toDouble() ?? 0.0,
+          vanInventory: (productData['qty_available'] as num?)?.toInt() ?? 0,
+          imageUrl: imageUrl,
+          defaultCode: defaultCode,
+          sellerIds: productData['seller_ids'] is List ? productData['seller_ids'] : [],
+          taxesIds: productData['taxes_id'] is List ? productData['taxes_id'] : [],
+          categId: productData['categ_id'] ?? false,
+          propertyStockProduction: productData['property_stock_production'] ?? false,
+          propertyStockInventory: productData['property_stock_inventory'] ?? false,
+          attributes: attributes.isNotEmpty ? attributes : null,
+        );
+      }).toList();
 
-        log("Successfully fetched ${fetchedProducts.length} storable products");
-        log("Total products: ${_products.length}");
+      fetchedProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      _products = fetchedProducts;
 
-        if (_products.isEmpty) {
-          log("No storable products found");
+      log("Successfully fetched ${fetchedProducts.length} storable products");
+      log("Total products: ${_products.length}");
+
+      if (_products.isEmpty) {
+        log("No storable products found");
+      } else {
+        final firstProduct = _products[0];
+        log("First product details:");
+        log("Default Code: ${firstProduct.defaultCode ?? 'N/A'}");
+        log("Seller IDs: ${firstProduct.sellerIds}");
+        log("Taxes IDs: ${firstProduct.taxesIds}");
+        log("Category: ${firstProduct.categId}");
+        log("Production Location: ${firstProduct.propertyStockProduction}");
+        log("Inventory Location: ${firstProduct.propertyStockInventory}");
+        if (firstProduct.attributes != null) {
+          log("Attributes: ${firstProduct.attributes!.map((a) => '${a.name}: ${a.values.join(', ')} (Extra Costs: ${a.extraCost})').join('; ')}");
         } else {
-          final firstProduct = _products[0];
-          log("First product details:");
-          log("Default Code: ${firstProduct.defaultCode ?? 'N/A'}");
-          log("Seller IDs: ${firstProduct.sellerIds}");
-          log("Taxes IDs: ${firstProduct.taxesIds}");
-          log("Category: ${firstProduct.categId}");
-          log("Production Location: ${firstProduct.propertyStockProduction}");
-          log("Inventory Location: ${firstProduct.propertyStockInventory}");
+          log("Attributes: None");
         }
       }
     } catch (e) {
@@ -354,5 +516,4 @@ class SalesOrderProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
-  }
-}
+  }}
