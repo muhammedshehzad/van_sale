@@ -724,121 +724,171 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                                         mainAxisAlignment:
                                             MainAxisAlignment.end,
                                         children: [
-// Replace the existing quantity selector in the _ProductSelectionPageState class
-// Around line 576, where the Container with quantity controls exists
-
-                                      Container(
-                                      decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.grey[300]!),
-                                  borderRadius: BorderRadius.circular(8),
-                                  color: Colors.grey[100],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: const BorderRadius.only(
-                                          topLeft: Radius.circular(7),
-                                          bottomLeft: Radius.circular(7),
-                                        ),
-                                        onTap: () {
-                                          setState(() {
-                                            if (quantities[product.id]! > 1) {
-                                              quantities[product.id] = quantities[product.id]! - 1;
-                                            }
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[200],
-                                            borderRadius: const BorderRadius.only(
-                                              topLeft: Radius.circular(7),
-                                              bottomLeft: Radius.circular(7),
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              border: Border.all(
+                                                  color: Colors.grey[300]!),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              color: Colors.grey[100],
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Material(
+                                                  color: Colors.transparent,
+                                                  child: InkWell(
+                                                    borderRadius:
+                                                        const BorderRadius.only(
+                                                      topLeft:
+                                                          Radius.circular(7),
+                                                      bottomLeft:
+                                                          Radius.circular(7),
+                                                    ),
+                                                    onTap: () {
+                                                      setState(() {
+                                                        if (quantities[
+                                                                product.id]! >
+                                                            1) {
+                                                          quantities[product
+                                                              .id] = quantities[
+                                                                  product.id]! -
+                                                              1;
+                                                        }
+                                                      });
+                                                    },
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                              8),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey[200],
+                                                        borderRadius:
+                                                            const BorderRadius
+                                                                .only(
+                                                          topLeft:
+                                                              Radius.circular(
+                                                                  7),
+                                                          bottomLeft:
+                                                              Radius.circular(
+                                                                  7),
+                                                        ),
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.remove_rounded,
+                                                        size: 16,
+                                                        color: quantities[
+                                                                    product
+                                                                        .id]! >
+                                                                1
+                                                            ? primaryColor
+                                                            : Colors.grey[400],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                SizedBox(
+                                                  width: 40,
+                                                  child: TextField(
+                                                    controller:
+                                                        TextEditingController(
+                                                            text: quantities[
+                                                                    product.id]
+                                                                .toString()),
+                                                    textAlign: TextAlign.center,
+                                                    keyboardType:
+                                                        TextInputType.number,
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors.grey[800],
+                                                    ),
+                                                    decoration: InputDecoration(
+                                                      isDense: true,
+                                                      contentPadding:
+                                                          const EdgeInsets
+                                                              .symmetric(
+                                                              vertical: 8,
+                                                              horizontal: 4),
+                                                      border: InputBorder.none,
+                                                      counterText: '',
+                                                      fillColor:
+                                                          Colors.grey[100],
+                                                      filled: true,
+                                                    ),
+                                                    maxLength: 4,
+                                                    onChanged: (value) {
+                                                      int? newQuantity =
+                                                          int.tryParse(value);
+                                                      if (newQuantity != null &&
+                                                          newQuantity > 0) {
+                                                        setState(() {
+                                                          quantities[
+                                                                  product.id] =
+                                                              newQuantity;
+                                                        });
+                                                      }
+                                                    },
+                                                    onSubmitted: (value) {
+                                                      int? newQuantity =
+                                                          int.tryParse(value);
+                                                      if (newQuantity == null ||
+                                                          newQuantity <= 0) {
+                                                        setState(() {
+                                                          quantities[
+                                                              product.id] = 1;
+                                                        });
+                                                      }
+                                                    },
+                                                  ),
+                                                ),
+                                                Material(
+                                                  color: Colors.transparent,
+                                                  child: InkWell(
+                                                    borderRadius:
+                                                        const BorderRadius.only(
+                                                      topRight:
+                                                          Radius.circular(7),
+                                                      bottomRight:
+                                                          Radius.circular(7),
+                                                    ),
+                                                    onTap: () {
+                                                      setState(() {
+                                                        quantities[product.id] =
+                                                            quantities[product
+                                                                    .id]! +
+                                                                1;
+                                                      });
+                                                    },
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                              8),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey[200],
+                                                        borderRadius:
+                                                            const BorderRadius
+                                                                .only(
+                                                          topRight:
+                                                              Radius.circular(
+                                                                  7),
+                                                          bottomRight:
+                                                              Radius.circular(
+                                                                  7),
+                                                        ),
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.add_rounded,
+                                                        size: 16,
+                                                        color: primaryColor,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                          child: Icon(
-                                            Icons.remove_rounded,
-                                            size: 16,
-                                            color: quantities[product.id]! > 1
-                                                ? primaryColor
-                                                : Colors.grey[400],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 40,
-                                      child: TextField(
-                                        controller: TextEditingController(text: quantities[product.id].toString()),
-                                        textAlign: TextAlign.center,
-                                        keyboardType: TextInputType.number,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.grey[800],
-                                        ),
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                                          border: InputBorder.none,
-                                          counterText: '',
-                                          fillColor: Colors.grey[100],
-                                          filled: true,
-                                        ),
-                                        maxLength: 4,
-                                        onChanged: (value) {
-                                          int? newQuantity = int.tryParse(value);
-                                          if (newQuantity != null && newQuantity > 0) {
-                                            setState(() {
-                                              quantities[product.id] = newQuantity;
-                                            });
-                                          }
-                                        },
-                                        onSubmitted: (value) {
-                                          int? newQuantity = int.tryParse(value);
-                                          if (newQuantity == null || newQuantity <= 0) {
-                                            setState(() {
-                                              quantities[product.id] = 1;
-                                            });
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: const BorderRadius.only(
-                                          topRight: Radius.circular(7),
-                                          bottomRight: Radius.circular(7),
-                                        ),
-                                        onTap: () {
-                                          setState(() {
-                                            quantities[product.id] = quantities[product.id]! + 1;
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[200],
-                                            borderRadius: const BorderRadius.only(
-                                              topRight: Radius.circular(7),
-                                              bottomRight: Radius.circular(7),
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons.add_rounded,
-                                            size: 16,
-                                            color: primaryColor,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                                         ],
                                       ),
                                     ],
