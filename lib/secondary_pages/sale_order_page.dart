@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:animated_custom_dropdown/custom_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +15,7 @@ class SaleOrderPage extends StatefulWidget {
   final double totalAmount;
   final String orderId;
   final VoidCallback? onClearSelections;
+  final Map<String, List<Map<String, dynamic>>>? productAttributes;
 
   const SaleOrderPage({
     Key? key,
@@ -21,6 +24,7 @@ class SaleOrderPage extends StatefulWidget {
     required this.totalAmount,
     required this.orderId,
     this.onClearSelections,
+    this.productAttributes,
   }) : super(key: key);
 
   @override
@@ -33,11 +37,9 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
   @override
   void initState() {
     super.initState();
-    // Load customers when the page initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final orderPickingProvider =
           Provider.of<OrderPickingProvider>(context, listen: false);
-      // Check if customers are already loaded to avoid unnecessary reloads
       if (orderPickingProvider.customers.isEmpty) {
         orderPickingProvider.loadCustomers();
       }
@@ -222,19 +224,49 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
         throw Exception('No active Odoo session found. Please log in again.');
       }
 
-      final orderLines = widget.selectedProducts.map((product) {
-        final quantity = widget.quantities[product.id] ?? 0;
-        return [
-          0,
-          0,
-          {
-            'product_id': int.parse(product.id),
-            'name': product.name,
-            'product_uom_qty': quantity,
-            'price_unit': product.price,
+      final orderLines = <dynamic>[];
+      for (var product in widget.selectedProducts) {
+        final attributes = widget.productAttributes?[product.id];
+        if (attributes != null && attributes.isNotEmpty) {
+          for (var combo in attributes) {
+            final qty = combo['quantity'] as int;
+            final attrs = combo['attributes'] as Map<String, String>;
+            double extraCost = 0;
+            for (var attr in product.attributes!) {
+              final value = attrs[attr.name];
+              if (value != null && attr.extraCost != null) {
+                extraCost += attr.extraCost![value] ?? 0;
+              }
+            }
+            final adjustedPrice = product.price + extraCost;
+            orderLines.add([
+              0,
+              0,
+              {
+                'product_id': int.parse(product.id),
+                'name':
+                    '${product.name} (${attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ')})',
+                'product_uom_qty': qty,
+                'price_unit': adjustedPrice,
+              }
+            ]);
           }
-        ];
-      }).toList();
+        } else {
+          final quantity = widget.quantities[product.id] ?? 0;
+          if (quantity > 0) {
+            orderLines.add([
+              0,
+              0,
+              {
+                'product_id': int.parse(product.id),
+                'name': product.name,
+                'product_uom_qty': quantity,
+                'price_unit': product.price,
+              }
+            ]);
+          }
+        }
+      }
 
       final saleOrderId = await client.callKw({
         'model': 'sale.order',
@@ -592,12 +624,16 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                         size: 16,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        localSelectedCustomer!.name,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.black87,
+                                      Expanded(
+                                        child: Text(
+                                          localSelectedCustomer!.name,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.black87,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
                                         ),
                                       ),
                                     ],
@@ -611,12 +647,16 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                         size: 16,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        localSelectedCustomer!.phone ??
-                                            'No phone',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
+                                      Expanded(
+                                        child: Text(
+                                          localSelectedCustomer!.phone ??
+                                              'No phone',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
                                         ),
                                       ),
                                     ],
@@ -630,12 +670,16 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                         size: 16,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        localSelectedCustomer!.email ??
-                                            'No email',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
+                                      Expanded(
+                                        child: Text(
+                                          localSelectedCustomer!.email ??
+                                              'No email',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
                                         ),
                                       ),
                                     ],
@@ -649,12 +693,16 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                         size: 16,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(
-                                        localSelectedCustomer!.city ??
-                                            'No city',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
+                                      Expanded(
+                                        child: Text(
+                                          localSelectedCustomer!.city ??
+                                              'No city',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
                                         ),
                                       ),
                                     ],
@@ -772,20 +820,14 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header Section
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(16)),
                   border: Border(
-                    bottom: BorderSide(
-                      color: Colors.grey[200]!,
-                      width: 1,
-                    ),
-                  ),
+                      bottom: BorderSide(color: Colors.grey[200]!, width: 1)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -798,222 +840,184 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                             color: Colors.green.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 24,
-                          ),
+                          child: const Icon(Icons.check_circle,
+                              color: Colors.green, size: 24),
                         ),
                         const SizedBox(width: 12),
                         const Text(
                           'Order Confirmed',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87),
                         ),
                       ],
                     ),
                     IconButton(
-                      icon: Icon(
-                        Icons.close,
-                        color: Colors.grey[600],
-                        size: 24,
-                      ),
+                      icon:
+                          Icon(Icons.close, color: Colors.grey[600], size: 24),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
               ),
-
               // Content Section
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Order ID
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primaryColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.receipt_long,
-                              size: 16,
-                              color: primaryColor,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Order ID: $orderId',
-                              style: TextStyle(
+              SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.receipt_long,
+                              size: 16, color: primaryColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Order ID: $orderId',
+                            style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: primaryColor,
-                              ),
+                                color: primaryColor),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...items
+                        .map(
+                          (item) => Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: Colors.grey[200]!, width: 1),
                             ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Order Details Header
-                      const Text(
-                        'Order Details',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Order Items
-                      ...items
-                          .map((item) => Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: Colors.grey[200]!,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.product.name,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black87,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Wrap(
+                                        spacing: 12,
                                         children: [
                                           Text(
-                                            item.product.name,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87,
+                                            'Qty: ${item.quantity}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                              fontWeight: FontWeight.w500,
                                             ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Text(
-                                                'Qty: ${item.quantity}',
-                                                style: TextStyle(
+                                          Flexible(
+                                            child: Text(
+                                              'Code: ${item.product.defaultCode ?? 'N/A'}',
+                                              style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.grey[600],
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                'Code: ${item.product.defaultCode ?? 'N/A'}',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600],
-                                                ),
-                                              ),
-                                            ],
+                                                  color: Colors.grey[600]),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                    // Price
-                                    Text(
-                                      currencyFormat.format(item.subtotal),
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: primaryColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ))
-                          .toList(),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Colors.grey[200]!,
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.1),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.attach_money,
-                                  color: primaryColor,
-                                  size: 20,
+                                    ],
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
-                                const Text(
-                                  'Total Amount',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
+                                Flexible(
+                                  flex: 1,
+                                  child: Text(
+                                    currencyFormat.format(item.subtotal),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: primaryColor,
+                                    ),
+                                    textAlign: TextAlign.end,
                                   ),
                                 ),
                               ],
                             ),
-                            Text(
-                              currencyFormat.format(totalAmount),
-                              style: TextStyle(
+                          ),
+                        )
+                        .toList(),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey[200]!, width: 1),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.attach_money,
+                                  color: primaryColor, size: 20),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Total Amount',
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            currencyFormat.format(totalAmount),
+                            style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: primaryColor,
-                              ),
-                            ),
-                          ],
-                        ),
+                                color: primaryColor),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(16),
-                  ),
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(16)),
                   border: Border(
-                    top: BorderSide(
-                      color: Colors.grey[200]!,
-                      width: 1,
-                    ),
-                  ),
+                      top: BorderSide(color: Colors.grey[200]!, width: 1)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -1021,12 +1025,9 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                     TextButton(
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
+                            horizontal: 24, vertical: 12),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                            borderRadius: BorderRadius.circular(8)),
                       ),
                       onPressed: () {
                         salesOrderProvider.clearOrder();
@@ -1039,10 +1040,9 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                       child: Text(
                         'Done',
                         style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: primaryColor,
-                        ),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: primaryColor),
                       ),
                     ),
                   ],
@@ -1061,23 +1061,45 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
     final totalItems = widget.selectedProducts.fold<int>(
         0, (sum, product) => sum + (widget.quantities[product.id] ?? 0));
 
+    double recalculatedTotal = 0;
+    for (var product in widget.selectedProducts) {
+      final attributes = widget.productAttributes?[product.id];
+      if (attributes != null && attributes.isNotEmpty) {
+        for (var combo in attributes) {
+          final qty = combo['quantity'] as int;
+          final attrs = combo['attributes'] as Map<String, String>;
+          double extraCost = 0;
+          for (var attr in product.attributes ?? []) {
+            final value = attrs[attr.name];
+            if (value != null && attr.extraCost != null) {
+              extraCost += attr.extraCost![value] ?? 0;
+            }
+          }
+          recalculatedTotal += (product.price + extraCost) * qty;
+        }
+      } else {
+        final quantity = widget.quantities[product.id] ?? 0;
+        recalculatedTotal += product.price * quantity;
+      }
+    }
+
+    // Log for debugging
+    final displayTotal = recalculatedTotal;
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
         title: Text(
           'Order Summary - ${widget.orderId}',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          style:
+              const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: primaryColor,
         elevation: 0,
       ),
       body: SafeArea(
         child: Padding(
-          padding:
-              const EdgeInsets.only(left: 16.0, right: 16, top: 16, bottom: 8),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1111,165 +1133,304 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                   itemBuilder: (context, index) {
                     final product = widget.selectedProducts[index];
                     final quantity = widget.quantities[product.id] ?? 0;
-                    final subtotal = product.price * quantity;
+                    final attributes = widget.productAttributes?[product.id];
+                    double subtotal = 0;
+
+                    List<Widget> attributeDetails = [];
+                    if (attributes != null && attributes.isNotEmpty) {
+                      for (var combo in attributes) {
+                        final qty = combo['quantity'] as int;
+                        final attrs =
+                            combo['attributes'] as Map<String, String>;
+                        double extraCost = 0;
+                        for (var attr in product.attributes ?? []) {
+                          final value = attrs[attr.name];
+                          if (value != null && attr.extraCost != null) {
+                            extraCost += attr.extraCost![value] ?? 0;
+                          }
+                        }
+                        final adjustedPrice = product.price + extraCost;
+                        subtotal += adjustedPrice * qty;
+
+                        attributeDetails.add(
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ')} - Qty: $qty',
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '+${currencyFormat.format(extraCost)}',
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                    } else {
+                      subtotal = product.price * quantity;
+                    }
+
                     return Card(
-                      color: Colors.white,
-                      elevation: 1,
+                      elevation: 2,
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 0, vertical: 6),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Row(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: product.imageUrl != null &&
-                                        product.imageUrl!.isNotEmpty
-                                    ? Image.memory(
-                                        base64Decode(
-                                            product.imageUrl!.split(',').last),
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) =>
-                                                Icon(
-                                          Icons.inventory_2_rounded,
-                                          color: primaryColor,
-                                          size: 24,
-                                        ),
-                                      )
-                                    : Icon(
-                                        Icons.inventory_2_rounded,
-                                        color: primaryColor,
-                                        size: 24,
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    product.name,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black87,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 70,
+                                  height: 70,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border:
+                                        Border.all(color: Colors.grey[200]!),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'SKU:',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        product.defaultCode ?? 'N/A',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        flex: 2,
-                                        child: Row(
-                                          children: [
-                                            Text(
-                                              'Price:',
-                                              style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w500,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: product.imageUrl != null &&
+                                            product.imageUrl!.isNotEmpty
+                                        ? Image.memory(
+                                            base64Decode(product.imageUrl!
+                                                .split(',')
+                                                .last),
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    Container(
+                                              color: Colors.grey[100],
+                                              child: Center(
+                                                child: Icon(
+                                                  Icons.inventory_2_rounded,
+                                                  color: primaryColor,
+                                                  size: 24,
+                                                ),
                                               ),
                                             ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              currencyFormat
-                                                  .format(product.price),
-                                              style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 1,
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            const Text(
-                                              '×',
-                                              style: TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              quantity.toString(),
-                                              style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.end,
-                                          children: [
-                                            const Text(
-                                              '= ',
-                                              style: TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                            Text(
-                                              currencyFormat.format(subtotal),
-                                              style: TextStyle(
+                                          )
+                                        : Container(
+                                            color: Colors.grey[100],
+                                            child: Center(
+                                              child: Icon(
+                                                Icons.inventory_2_rounded,
                                                 color: primaryColor,
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
+                                                size: 24,
                                               ),
                                             ),
-                                          ],
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        product.name ?? 'Unknown Product',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black87,
+                                          height: 1.2,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'SKU:',
+                                            style: TextStyle(
+                                              color: Colors.grey[700],
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            product.defaultCode ?? 'N/A',
+                                            style: TextStyle(
+                                              color: Colors.grey[800],
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Builder(
+                                        builder: (context) {
+                                          final attributes = widget
+                                              .productAttributes?[product.id];
+                                          final totalQuantity =
+                                              widget.quantities[product.id] ??
+                                                  0;
+                                          final pricing =
+                                              _calculateProductPricing(
+                                            product: product,
+                                            attributes: attributes,
+                                            totalQuantity: totalQuantity,
+                                          );
+
+                                          return Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    'Qty: $totalQuantity',
+                                                    style: TextStyle(
+                                                      color: Colors.grey[700],
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  const Spacer(),
+                                                  Text(
+                                                    'Total: ',
+                                                    style: TextStyle(
+                                                      color: Colors.grey[800],
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    currencyFormat.format(
+                                                        pricing.subtotal),
+                                                    style: TextStyle(
+                                                      color: primaryColor,
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
+                            ),
+                            Builder(
+                              builder: (context) {
+                                final attributes =
+                                    widget.productAttributes?[product.id];
+                                final totalQuantity =
+                                    widget.quantities[product.id] ?? 0;
+                                final pricing = _calculateProductPricing(
+                                  product: product,
+                                  attributes: attributes,
+                                  totalQuantity: totalQuantity,
+                                );
+                                if (pricing.attributeDetails.isNotEmpty) {
+                                  return ExpansionTile(
+                                    tilePadding: EdgeInsets.zero,
+                                    childrenPadding: EdgeInsets.zero,
+                                    shape: const Border(),
+                                    collapsedShape: const Border(),
+                                    title: Text(
+                                      'Price Details',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    children: [
+                                      ...pricing.attributeDetails.map(
+                                        (detail) => Padding(
+                                          padding: const EdgeInsets.only(
+                                              bottom: 6, left: 8, right: 8),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[50],
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                  color: Colors.grey[200]!),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  detail.attributesText,
+                                                  style: TextStyle(
+                                                    color: Colors.grey[800],
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        '${detail.quantity} × ${currencyFormat.format(product.price)}' +
+                                                            (detail.extraCost >
+                                                                    0
+                                                                ? ' + ${detail.quantity} × ${currencyFormat.format(detail.extraCost)}'
+                                                                : ''),
+                                                        style: TextStyle(
+                                                          color:
+                                                              Colors.grey[700],
+                                                          fontSize: 11,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      currencyFormat.format(
+                                                          detail.lineTotal),
+                                                      style: TextStyle(
+                                                        color: primaryColor,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                } else {
+                                  return const SizedBox.shrink();
+                                }
+                              },
                             ),
                           ],
                         ),
@@ -1329,7 +1490,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                           ),
                         ),
                         Text(
-                          currencyFormat.format(widget.totalAmount),
+                          currencyFormat.format(recalculatedTotal),
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -1381,9 +1542,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                           ),
                           onPressed: provider.isLoading
                               ? null
-                              : () async {
-                                  _showCustomerSelectionDialog(context);
-                                },
+                              : () => _showCustomerSelectionDialog(context),
                           child: provider.isLoading
                               ? const SizedBox(
                                   height: 20,
@@ -1412,4 +1571,80 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
       ),
     );
   }
+}
+
+class PricingData {
+  final double subtotal;
+  final List<AttributeDetail> attributeDetails;
+
+  PricingData({
+    required this.subtotal,
+    required this.attributeDetails,
+  });
+}
+
+class AttributeDetail {
+  final String attributesText;
+  final double extraCost;
+  final int quantity;
+  final double lineTotal;
+
+  AttributeDetail({
+    required this.attributesText,
+    required this.extraCost,
+    required this.quantity,
+    required this.lineTotal,
+  });
+}
+
+// Helper method to calculate product pricing
+PricingData _calculateProductPricing({
+  required Product product,
+  List<Map<String, dynamic>>? attributes,
+  required int totalQuantity,
+}) {
+  double subtotal = 0;
+  List<AttributeDetail> attributeDetails = [];
+
+  if (attributes != null && attributes.isNotEmpty) {
+    for (var combo in attributes) {
+      final qty = combo['quantity'] as int;
+      final attrs = combo['attributes'] as Map<String, String>;
+      double extraCost = 0;
+
+      // Calculate extra cost for this combination
+      for (var attr in product.attributes ?? []) {
+        final value = attrs[attr.name];
+        if (value != null && attr.extraCost != null) {
+          extraCost += attr.extraCost![value] ?? 0;
+        }
+      }
+
+      final lineTotal = (product.price + extraCost) * qty;
+      subtotal += lineTotal;
+
+      // Format attribute text
+      final attrDescription =
+          attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ');
+
+      // Create attribute detail
+      attributeDetails.add(
+        AttributeDetail(
+          attributesText:
+              qty > 1 ? '$attrDescription (Qty: $qty)' : attrDescription,
+          extraCost: extraCost,
+          quantity: qty,
+          lineTotal: lineTotal,
+        ),
+      );
+    }
+  } else {
+    // No attributes, use base price and total quantity
+    subtotal = product.price * totalQuantity;
+  }
+
+  return PricingData(
+    subtotal: subtotal,
+    attributeDetails: attributeDetails,
+  );
 }

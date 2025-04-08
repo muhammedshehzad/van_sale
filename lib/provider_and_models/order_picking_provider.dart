@@ -119,14 +119,20 @@ class OrderPickingProvider with ChangeNotifier {
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, animation, secondaryAnimation) {
+        final formKey = GlobalKey<FormState>(); // Key for form validation
         final nameController = TextEditingController();
         final quantityController = TextEditingController();
         final salePriceController = TextEditingController();
         final costController = TextEditingController();
         final barcodeController = TextEditingController();
+        final descriptionController = TextEditingController();
+        final weightController = TextEditingController();
         String selectedUnit = 'Pieces';
         String selectedCategory = 'General';
         String selectedProductType = 'product';
+        bool canBeSold = true;
+        bool canBePurchased = true;
+        List<String> selectedTaxes = []; // Example: list of tax names or IDs
 
         return Dialog(
           shape: RoundedRectangleBorder(
@@ -136,281 +142,340 @@ class OrderPickingProvider with ChangeNotifier {
           backgroundColor: Colors.white,
           child: Padding(
             padding: const EdgeInsets.all(20.0),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Add New Product',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: primaryDarkColor,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField(
-                    label: 'Product Type',
-                    value: selectedProductType,
-                    items: ['product', 'consu', 'service'],
-                    onChanged: (value) => selectedProductType = value,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildTextField(
-                    controller: nameController,
-                    label: 'Product Name',
-                    validator: (value) => value == null || value.isEmpty
-                        ? 'Please enter product name'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField(
-                    label: 'Category',
-                    value: selectedCategory,
-                    items: ProductItem().categories,
-                    onChanged: (value) => selectedCategory = value,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildTextField(
-                    controller: quantityController,
-                    label: 'Initial Quantity',
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return 'Please enter quantity';
-                      if (int.tryParse(value) == null || int.parse(value) < 0) {
-                        return 'Please enter a valid quantity';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDropdownField(
-                    label: 'Unit of Measure',
-                    value: selectedUnit,
-                    items: ProductItem().units,
-                    onChanged: (value) => selectedUnit = value,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildTextField(
-                    controller: costController,
-                    label: 'Product Cost',
-                    keyboardType:
-                        TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return 'Please enter cost price';
-                      if (double.tryParse(value) == null ||
-                          double.parse(value) < 0) {
-                        return 'Please enter a valid cost price';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _buildTextField(
-                    controller: salePriceController,
-                    label: 'Sale Price',
-                    keyboardType:
-                        TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return 'Please enter sale price';
-                      if (double.tryParse(value) == null ||
-                          double.parse(value) < 0) {
-                        return 'Please enter a valid sale price';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.grey[600],
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(kBorderRadius),
-                          ),
-                        ),
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text(
-                          'Cancel',
+            child: Form(
+              key: formKey, // Attach the form key
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Add New Product',
                           style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(kBorderRadius),
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: primaryDarkColor,
                           ),
-                          elevation: 2,
                         ),
-                        onPressed: () async {
-                          if (nameController.text.isNotEmpty &&
-                              quantityController.text.isNotEmpty &&
-                              int.tryParse(quantityController.text) != null &&
-                              int.parse(quantityController.text) >= 0 &&
-                              salePriceController.text.isNotEmpty &&
-                              double.tryParse(salePriceController.text) !=
-                                  null &&
-                              double.parse(salePriceController.text) >= 0 &&
-                              costController.text.isNotEmpty &&
-                              double.tryParse(costController.text) != null &&
-                              double.parse(costController.text) >= 0) {
-                            final newProduct = ProductItem();
-                            newProduct.nameController.text =
-                                nameController.text;
-                            newProduct.quantityController.text =
-                                quantityController.text;
-                            newProduct.salePriceController.text =
-                                salePriceController.text;
-                            newProduct.costController.text =
-                                costController.text;
-                            newProduct.barcodeController.text =
-                                barcodeController.text;
-                            newProduct.selectedUnit = selectedUnit;
-                            newProduct.selectedCategory = selectedCategory;
-                            newProduct.selectedProductType =
-                                selectedProductType;
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.grey),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDropdownField(
+                      label: 'Product Type',
+                      value: selectedProductType,
+                      items: ['product', 'consu', 'service'],
+                      onChanged: (value) => selectedProductType = value,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: nameController,
+                      label: 'Product Name',
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter product name';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: descriptionController,
+                      label: 'Description',
+                      maxLines: 3,
+                      validator: (value) {
+                        // Optional field, no validation required unless specific rules apply
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDropdownField(
+                      label: 'Category',
+                      value: selectedCategory,
+                      items: ProductItem().categories,
+                      onChanged: (value) => selectedCategory = value,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: quantityController,
+                      label: 'Initial Quantity',
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter quantity';
+                        }
+                        if (int.tryParse(value) == null ||
+                            int.parse(value) < 0) {
+                          return 'Please enter a valid non-negative quantity';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDropdownField(
+                      label: 'Unit of Measure',
+                      value: selectedUnit,
+                      items: ProductItem().units,
+                      onChanged: (value) => selectedUnit = value,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: costController,
+                      label: 'Product Cost',
+                      keyboardType:
+                          TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter cost price';
+                        }
+                        if (double.tryParse(value) == null ||
+                            double.parse(value) < 0) {
+                          return 'Please enter a valid non-negative cost price';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: salePriceController,
+                      label: 'Sale Price',
+                      keyboardType:
+                          TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter sale price';
+                        }
+                        if (double.tryParse(value) == null ||
+                            double.parse(value) < 0) {
+                          return 'Please enter a valid non-negative sale price';
+                        }
+                        return null;
+                      },
+                    ),
+                    // const SizedBox(height: 12),
+                    // _buildTextField(
+                    //   controller: weightController,
+                    //   label: 'Weight (kg)',
+                    //   keyboardType: TextInputType.numberWithOptions(decimal: true),
+                    //   validator: (value) {
+                    //     if (value != null && value.isNotEmpty) {
+                    //       if (double.tryParse(value) == null || double.parse(value) < 0) {
+                    //         return 'Please enter a valid non-negative weight';
+                    //       }
+                    //     }
+                    //     return null;
+                    //   },
+                    // ),
+                    const SizedBox(height: 12),
+                    _buildTextField(
+                      controller: barcodeController,
+                      label: 'Barcode',
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          if (value.length < 8) {
+                            // Example: minimum length check
+                            return 'Barcode must be at least 8 characters';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    CheckboxListTile(
+                      title: const Text('Can be Sold'),
+                      value: canBeSold,
+                      onChanged: (value) => canBeSold = value ?? true,
+                    ),
+                    CheckboxListTile(
+                      title: const Text('Can be Purchased'),
+                      value: canBePurchased,
+                      onChanged: (value) => canBePurchased = value ?? true,
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.grey[600],
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
+                            ),
+                          ),
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
+                            ),
+                            elevation: 2,
+                          ),
+                          onPressed: () async {
+                            if (formKey.currentState!.validate()) {
+                              final newProduct = ProductItem();
+                              newProduct.nameController.text =
+                                  nameController.text;
+                              newProduct.quantityController.text =
+                                  quantityController.text;
+                              newProduct.salePriceController.text =
+                                  salePriceController.text;
+                              newProduct.costController.text =
+                                  costController.text;
+                              newProduct.barcodeController.text =
+                                  barcodeController.text;
+                              newProduct.selectedUnit = selectedUnit;
+                              newProduct.selectedCategory = selectedCategory;
+                              newProduct.selectedProductType =
+                                  selectedProductType;
 
-                            try {
-                              final client =
-                                  await SessionManager.getActiveClient();
-                              if (client == null) {
-                                throw Exception(
-                                    'No active Odoo session found. Please log in again.');
-                              }
-                              final productData = {
-                                'name': nameController.text,
-                                'default_code':
-                                    'PROD-${DateTime.now().millisecondsSinceEpoch}',
-                                'list_price':
-                                    double.parse(salePriceController.text),
-                                'standard_price':
-                                    double.parse(costController.text),
-                                'barcode': barcodeController.text.isNotEmpty
-                                    ? barcodeController.text
-                                    : false,
-                                'type': selectedProductType,
-                                'uom_id': _mapUnitToOdooId(selectedUnit),
-                                'uom_po_id': _mapUnitToOdooId(selectedUnit),
-                                'categ_id':
-                                    _mapCategoryToOdooId(selectedCategory),
-                              };
+                              try {
+                                final client =
+                                    await SessionManager.getActiveClient();
+                                if (client == null) {
+                                  throw Exception(
+                                      'No active Odoo session found. Please log in again.');
+                                }
+                                final productData = {
+                                  'name': nameController.text,
+                                  'default_code':
+                                      'PROD-${DateTime.now().millisecondsSinceEpoch}',
+                                  'list_price':
+                                      double.parse(salePriceController.text),
+                                  'standard_price':
+                                      double.parse(costController.text),
+                                  'barcode': barcodeController.text.isNotEmpty
+                                      ? barcodeController.text
+                                      : false,
+                                  'type': selectedProductType,
+                                  'uom_id': _mapUnitToOdooId(selectedUnit),
+                                  'uom_po_id': _mapUnitToOdooId(selectedUnit),
+                                  'categ_id':
+                                      _mapCategoryToOdooId(selectedCategory),
+                                  'description_sale':
+                                      descriptionController.text,
+                                  'weight': weightController.text.isNotEmpty
+                                      ? double.parse(weightController.text)
+                                      : 0.0,
+                                  'sale_ok': canBeSold,
+                                  'purchase_ok': canBePurchased,
+                                  // Add taxes if implemented: 'taxes_id': [(6, 0, _mapTaxesToOdooIds(selectedTaxes))],
+                                };
 
-                              final productId = await client.callKw({
-                                'model': 'product.product',
-                                'method': 'create',
-                                'args': [productData],
-                                'kwargs': {},
-                              });
-
-                              if (int.parse(quantityController.text) > 0) {
-                                await client.callKw({
-                                  'model': 'stock.quant',
+                                final productId = await client.callKw({
+                                  'model': 'product.product',
                                   'method': 'create',
-                                  'args': [
-                                    {
-                                      'product_id': productId,
-                                      'location_id': 8,
-                                      'quantity':
-                                          int.parse(quantityController.text)
-                                              .toDouble(),
-                                    }
-                                  ],
+                                  'args': [productData],
                                   'kwargs': {},
                                 });
-                              }
 
-                              newProduct.odooId = productId;
-                              _products.add(newProduct);
+                                if (int.parse(quantityController.text) > 0) {
+                                  await client.callKw({
+                                    'model': 'stock.quant',
+                                    'method': 'create',
+                                    'args': [
+                                      {
+                                        'product_id': productId,
+                                        'location_id': 8,
+                                        'quantity':
+                                            int.parse(quantityController.text)
+                                                .toDouble(),
+                                      }
+                                    ],
+                                    'kwargs': {},
+                                  });
+                                }
 
-                              final salesProvider =
-                                  Provider.of<SalesOrderProvider>(context,
-                                      listen: false);
-                              try {
-                                await salesProvider.loadProducts();
-                                _availableProducts = salesProvider.products;
-                                _needsProductRefresh = true;
-                                notifyListeners();
+                                newProduct.odooId = productId;
+                                _products.add(newProduct);
 
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Product added successfully to Odoo (ID: $productId)'),
-                                    backgroundColor: Colors.green,
-                                    duration: const Duration(seconds: 2),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
+                                final salesProvider =
+                                    Provider.of<SalesOrderProvider>(context,
+                                        listen: false);
+                                try {
+                                  await salesProvider.loadProducts();
+                                  _availableProducts = salesProvider.products;
+                                  _needsProductRefresh = true;
+                                  notifyListeners();
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          'Product added successfully to Odoo (ID: $productId)'),
+                                      backgroundColor: Colors.green,
+                                      duration: const Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          'Failed to refresh products: $e'),
+                                      backgroundColor: Colors.red,
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
                               } catch (e) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content:
-                                        Text('Failed to refresh products: $e'),
+                                    content: Text(
+                                        'Failed to add product to Odoo: $e'),
                                     backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 3),
                                     behavior: SnackBarBehavior.floating,
                                   ),
                                 );
                               }
-                            } catch (e) {
+
+                              Navigator.of(context).pop();
+                            } else {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content:
-                                      Text('Failed to add product to Odoo: $e'),
-                                  backgroundColor: Colors.red,
-                                  duration: const Duration(seconds: 3),
+                                  content: const Text(
+                                      'Please fill in all required fields correctly'),
+                                  backgroundColor: primaryColor,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(kBorderRadius),
+                                  ),
                                   behavior: SnackBarBehavior.floating,
+                                  margin: const EdgeInsets.all(16),
                                 ),
                               );
                             }
-
-                            Navigator.of(context).pop();
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text(
-                                    'Please fill in all required fields correctly'),
-                                backgroundColor: primaryColor,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(kBorderRadius),
-                                ),
-                                behavior: SnackBarBehavior.floating,
-                                margin: const EdgeInsets.all(16),
-                              ),
-                            );
-                          }
-                        },
-                        child: const Text(
-                          'Add Product',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.bold),
+                          },
+                          child: const Text(
+                            'Add Product',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                    ],
-                  )
-                ],
+                      ],
+                    )
+                  ],
+                ),
               ),
             ),
           ),
@@ -420,13 +485,19 @@ class OrderPickingProvider with ChangeNotifier {
         return ScaleTransition(
           scale: CurvedAnimation(
             parent: animation,
-            curve: Curves.easeOut,
-          ).drive(Tween<double>(begin: 0.8, end: 1.0)),
+            curve: Curves.easeInOut,
+          ).drive(Tween<double>(
+            begin: 0.9,
+            end: 1.0,
+          )),
           child: FadeTransition(
             opacity: CurvedAnimation(
               parent: animation,
-              curve: Curves.easeIn,
-            ),
+              curve: Curves.easeInOutCubic,
+            ).drive(Tween<double>(
+              begin: 0.0,
+              end: 1.0,
+            )),
             child: child,
           ),
         );
@@ -438,7 +509,7 @@ class OrderPickingProvider with ChangeNotifier {
     switch (unit) {
       case 'Pieces':
         return 1;
-      case 'Kilograms':
+        case 'Kilograms':
         return 2;
 
       default:
