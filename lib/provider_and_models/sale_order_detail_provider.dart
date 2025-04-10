@@ -2,6 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:van_sale_applicatioin/provider_and_models/cyllo_session_model.dart';
 
+class Invoice {
+  final int id;
+  final String name; // Invoice number
+  final String state; // Invoice status (draft, posted, cancelled)
+  final DateTime invoiceDate;
+  final DateTime? dueDate;
+  final Map<String, dynamic> partner; // Customer/Partner data
+  final List<Map<String, dynamic>> invoiceLines; // Invoice line items
+  final double amountUntaxed;
+  final double amountTax;
+  final double amountTotal;
+  final String? paymentState;
+
+  Invoice({
+    required this.id,
+    required this.name,
+    required this.state,
+    required this.invoiceDate,
+    this.dueDate,
+    required this.partner,
+    required this.invoiceLines,
+    required this.amountUntaxed,
+    required this.amountTax,
+    required this.amountTotal,
+    this.paymentState,
+  });
+}
+
 class SaleOrderDetailProvider extends ChangeNotifier {
   final Map<String, dynamic> orderData;
   Map<String, dynamic>? _orderDetails;
