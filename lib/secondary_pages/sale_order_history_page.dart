@@ -101,7 +101,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text(
+        title:  Text(
           'Sale Order History',
           style: TextStyle(
             fontWeight: FontWeight.bold,

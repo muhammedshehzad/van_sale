@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 class CustomSnackbar {
   SnackBar showSnackBar(
-      String type,
-      String message,
-      String actionLabel,
-      VoidCallback? onActionPressed,
-      ) {
+    String type,
+    String message,
+    String actionLabel,
+    VoidCallback? onActionPressed,
+  ) {
     Color backgroundColor;
     IconData icon;
     switch (type.toLowerCase()) {
@@ -55,10 +55,10 @@ class CustomSnackbar {
       duration: const Duration(seconds: 3),
       action: actionLabel.isNotEmpty
           ? SnackBarAction(
-        label: actionLabel,
-        textColor: Colors.white,
-        onPressed: onActionPressed ?? () {},
-      )
+              label: actionLabel,
+              textColor: Colors.white,
+              onPressed: onActionPressed ?? () {},
+            )
           : null,
       elevation: 6.0,
       margin: const EdgeInsets.all(10),

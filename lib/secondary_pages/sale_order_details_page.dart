@@ -1,10 +1,14 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:van_sale_applicatioin/provider_and_models/cyllo_session_model.dart';
 import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
+import 'package:van_sale_applicatioin/widgets/page_transition.dart';
 
 import '../provider_and_models/order_picking_provider.dart';
+import 'delivey_details_page.dart';
 
 class SaleOrderDetailPage extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -45,20 +49,24 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
         const SnackBar(
           content: Text('This picking is already fully validated.'),
           backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
         ),
       );
       return;
     }
 
     Map<int, double> pickedQuantities = {};
-    Map<int, double> stockAvailability;
+    Map<int, double> stockAvailability = {};
     bool validateImmediately = false;
     bool isProcessing = false;
 
     final client = await SessionManager.getActiveClient();
     if (client == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active Odoo session found.')),
+        const SnackBar(
+          content: Text('No active Odoo session found.'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }
@@ -84,7 +92,10 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
       });
       if (moveLinesResult.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No products found for this picking.')),
+          const SnackBar(
+            content: Text('No products found for this picking.'),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
         return;
       }
@@ -123,156 +134,411 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
         warehouseId,
       );
 
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: Text('Pick Products for ${picking['name']}'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: moveLines.length,
-                    itemBuilder: (context, index) {
-                      final moveLine = moveLines[index];
-                      final productId =
-                          (moveLine['product_id'] as List)[0] as int;
-                      final productName =
-                          (moveLine['product_id'] as List)[1] as String;
-                      final pickedQty = moveLine[doneField] as double? ?? 0.0;
-                      final orderedQty = moveLine['ordered_qty'] as double;
-                      final availableQty = stockAvailability[productId] ?? 0.0;
-
-                      pickedQuantities.putIfAbsent(productId, () => pickedQty);
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(productName,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold)),
-                                if (pickedQty >= orderedQty)
-                                  Chip(
-                                    label: const Text('Picked'),
-                                    backgroundColor:
-                                        Colors.green.withOpacity(0.2),
-                                    labelStyle:
-                                        const TextStyle(color: Colors.green),
-                                  ),
-                              ],
-                            ),
-                            Text(
-                              'Available: ${availableQty.toStringAsFixed(2)} | Ordered: ${orderedQty.toStringAsFixed(2)} | Picked: ${pickedQuantities[productId]!.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                  color: Colors.grey[600], fontSize: 12),
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue:
-                                        pickedQuantities[productId]!.toString(),
-                                    keyboardType: TextInputType.number,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Picked Quantity',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    onChanged: (value) {
-                                      double qty =
-                                          double.tryParse(value) ?? 0.0;
-                                      if (qty > orderedQty) qty = orderedQty;
-                                      if (qty > availableQty)
-                                        qty = availableQty;
-                                      if (qty < 0) qty = 0.0;
-                                      setDialogState(() {
-                                        pickedQuantities[productId] = qty;
-                                      });
-                                    },
-                                  ),
+          builder: (context, setDialogState) => Dialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.9,
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Pick Products for ${picking['name']}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFFA12424),
                                 ),
-                              ],
-                            ),
-                            if (availableQty < (orderedQty - pickedQty))
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4.0),
-                                child: Text(
-                                  'Warning: Insufficient stock!',
-                                  style: TextStyle(
-                                      color: Colors.red[700], fontSize: 12),
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  CheckboxListTile(
-                    title: const Text('Validate Immediately'),
-                    value: validateImmediately,
-                    onChanged: (value) =>
-                        setDialogState(() => validateImmediately = value!),
-                  ),
-                ],
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: isProcessing
+                              ? null
+                              : () => Navigator.pop(dialogContext),
+                          color: Colors.grey[600],
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    Flexible(
+                      child: moveLines.isEmpty
+                          ? const Center(child: Text('No products to pick'))
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: moveLines.length,
+                              separatorBuilder: (context, index) =>
+                                  const Divider(height: 24),
+                              itemBuilder: (context, index) {
+                                final moveLine = moveLines[index];
+                                final productId =
+                                    (moveLine['product_id'] as List)[0] as int;
+                                final productName = (moveLine['product_id']
+                                    as List)[1] as String;
+                                final pickedQty =
+                                    moveLine[doneField] as double? ?? 0.0;
+                                final orderedQty =
+                                    moveLine['ordered_qty'] as double;
+                                final availableQty =
+                                    stockAvailability[productId] ?? 0.0;
+
+                                pickedQuantities.putIfAbsent(
+                                    productId, () => pickedQty);
+
+                                final isFullyPicked =
+                                    pickedQuantities[productId]! >= orderedQty;
+                                final isLowStock =
+                                    availableQty < (orderedQty - pickedQty);
+
+                                return Card(
+                                  elevation: 0,
+                                  color: isFullyPicked
+                                      ? Colors.green.withOpacity(0.1)
+                                      : Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    side: BorderSide(
+                                      color: isFullyPicked
+                                          ? Colors.green.withOpacity(0.5)
+                                          : isLowStock
+                                              ? Colors.red.withOpacity(0.5)
+                                              : Colors.grey.withOpacity(0.3),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12.0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                productName,
+                                                style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                              ),
+                                            ),
+                                            if (isFullyPicked)
+                                              Chip(
+                                                label: const Text('Picked'),
+                                                backgroundColor: Colors.green
+                                                    .withOpacity(0.2),
+                                                labelStyle: const TextStyle(
+                                                    color: Colors.green),
+                                                padding: EdgeInsets.zero,
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                              ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 16,
+                                          runSpacing: 8,
+                                          children: [
+                                            _buildStatIndicator(
+                                              context,
+                                              'Available',
+                                              availableQty.toStringAsFixed(2),
+                                              isLowStock
+                                                  ? Colors.red[700]!
+                                                  : Colors.grey[700]!,
+                                            ),
+                                            _buildStatIndicator(
+                                              context,
+                                              'Ordered',
+                                              orderedQty.toStringAsFixed(2),
+                                              Colors.grey[700]!,
+                                            ),
+                                            _buildStatIndicator(
+                                              context,
+                                              'Picked',
+                                              pickedQuantities[productId]!
+                                                  .toStringAsFixed(2),
+                                              isFullyPicked
+                                                  ? Colors.green[700]!
+                                                  : Colors.grey[700]!,
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextFormField(
+                                                initialValue:
+                                                    pickedQuantities[productId]!
+                                                        .toString(),
+                                                keyboardType:
+                                                    const TextInputType
+                                                        .numberWithOptions(
+                                                        decimal: true),
+                                                decoration: InputDecoration(
+                                                  labelText: 'Picked Quantity',
+                                                  border:
+                                                      const OutlineInputBorder(),
+                                                  focusedBorder:
+                                                      OutlineInputBorder(
+                                                    borderSide: BorderSide(
+                                                        color: const Color(
+                                                            0xFFA12424),
+                                                        width: 2),
+                                                  ),
+                                                  suffixIcon: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        icon: const Icon(
+                                                            Icons.remove),
+                                                        onPressed: isProcessing
+                                                            ? null
+                                                            : () {
+                                                                setDialogState(
+                                                                    () {
+                                                                  double qty =
+                                                                      pickedQuantities[
+                                                                          productId]!;
+                                                                  qty -= 1;
+                                                                  if (qty < 0)
+                                                                    qty = 0;
+                                                                  pickedQuantities[
+                                                                          productId] =
+                                                                      qty;
+                                                                });
+                                                              },
+                                                        color: const Color(
+                                                            0xFFA12424),
+                                                      ),
+                                                      IconButton(
+                                                        icon: const Icon(
+                                                            Icons.add),
+                                                        onPressed: isProcessing
+                                                            ? null
+                                                            : () {
+                                                                setDialogState(
+                                                                    () {
+                                                                  double qty =
+                                                                      pickedQuantities[
+                                                                          productId]!;
+                                                                  qty += 1;
+                                                                  double maxQty = orderedQty <
+                                                                          availableQty
+                                                                      ? orderedQty
+                                                                      : availableQty;
+                                                                  if (qty >
+                                                                      maxQty)
+                                                                    qty =
+                                                                        maxQty;
+                                                                  pickedQuantities[
+                                                                          productId] =
+                                                                      qty;
+                                                                });
+                                                              },
+                                                        color: const Color(
+                                                            0xFFA12424),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                onChanged: (value) {
+                                                  double qty =
+                                                      double.tryParse(value) ??
+                                                          0.0;
+                                                  if (qty > orderedQty)
+                                                    qty = orderedQty;
+                                                  if (qty > availableQty)
+                                                    qty = availableQty;
+                                                  if (qty < 0) qty = 0.0;
+                                                  setDialogState(() {
+                                                    pickedQuantities[
+                                                        productId] = qty;
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (isLowStock)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 8.0),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                    Icons.warning_amber_rounded,
+                                                    color: Colors.red[700],
+                                                    size: 16),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Insufficient stock!',
+                                                  style: TextStyle(
+                                                      color: Colors.red[700],
+                                                      fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    const Divider(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: CheckboxListTile(
+                            title: const Text('Validate Immediately'),
+                            value: validateImmediately,
+                            onChanged: isProcessing
+                                ? null
+                                : (value) => setDialogState(
+                                    () => validateImmediately = value!),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        OutlinedButton(
+                          onPressed: isProcessing
+                              ? null
+                              : () => Navigator.pop(dialogContext),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFFA12424)),
+                          ),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(color: primaryColor),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton.icon(
+                          onPressed: isProcessing
+                              ? null
+                              : () async {
+                                  setDialogState(() => isProcessing = true);
+                                  try {
+                                    await provider.confirmPicking(pickingId,
+                                        pickedQuantities, validateImmediately);
+                                    if (context.mounted) {
+                                      Navigator.pop(dialogContext);
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            validateImmediately
+                                                ? 'Picking validated successfully'
+                                                : 'Picking quantities updated successfully',
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(dialogContext)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text('Error: $e'),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                  } finally {
+                                    setDialogState(() => isProcessing = false);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA12424),
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: Icon(
+                            validateImmediately
+                                ? Icons.check_circle
+                                : Icons.save,
+                            color: Colors.white,
+                          ),
+                          label: Text(validateImmediately
+                              ? 'Validate Picking'
+                              : 'Save Picking'),
+                        ),
+                      ],
+                    ),
+                    if (isProcessing)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16.0),
+                        child: LinearProgressIndicator(
+                          color: Color(0xFFA12424),
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed:
-                    isProcessing ? null : () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: isProcessing
-                    ? null
-                    : () async {
-                        setDialogState(() => isProcessing = true);
-                        try {
-                          await provider.confirmPicking(
-                              pickingId, pickedQuantities, validateImmediately);
-                          Navigator.pop(dialogContext);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                validateImmediately
-                                    ? 'Picking validated successfully'
-                                    : 'Picking quantities updated successfully',
-                              ),
-                            ),
-                          );
-                        } catch (e) {
-                          ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            SnackBar(content: Text('Error: $e')),
-                          );
-                        } finally {
-                          setDialogState(() => isProcessing = false);
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1976D2)),
-                child: Text(
-                    validateImmediately ? 'Validate Picking' : 'Save Picking'),
-              ),
-            ],
           ),
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error initializing picking dialog: $e')),
+        SnackBar(
+          content: Text('Error initializing picking dialog: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
+  }
+
+  Widget _buildStatIndicator(
+      BuildContext context, String label, String value, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label: ',
+          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
   }
 
   @override
@@ -302,6 +568,7 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () => Navigator.of(context).pop(),
               ),
+              backgroundColor: primaryColor,
             ),
             body: SafeArea(
               child: provider.isLoading
@@ -1228,84 +1495,194 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                           if (snapshot.connectionState ==
                                               ConnectionState.waiting) {
                                             return const Center(
-                                                child:
-                                                    CircularProgressIndicator());
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    'Loading progress...',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.grey,
+                                                      fontStyle:
+                                                          FontStyle.italic,
+                                                    ),
+                                                  ),
+                                                  SizedBox(width: 12),
+                                                  SizedBox(
+                                                    width: 30,
+                                                    height: 30,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 3,
+                                                      color: primaryColor,
+                                                    ),
+                                                  )
+                                                ],
+                                              ),
+                                            );
                                           }
+
                                           final picked =
                                               snapshot.data?['picked'] ?? 0.0;
                                           final ordered =
                                               snapshot.data?['ordered'] ?? 1.0;
-                                          final progress = picked / ordered;
-                                          return Column(
-                                            children: [
-                                              LinearProgressIndicator(
-                                                value: progress.clamp(0.0, 1.0),
-                                                backgroundColor:
-                                                    Colors.grey[300],
-                                                color: Colors.green,
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                'Picked: ${picked.toStringAsFixed(0)} / ${ordered.toStringAsFixed(0)}',
-                                                style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey[700]),
-                                              ),
-                                            ],
+                                          final progress = (picked / ordered)
+                                              .clamp(0.0, 1.0);
+
+                                          return Padding(
+                                            padding: const EdgeInsets.all(6.0),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Picking Progress',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 14,
+                                                    color: Colors.grey[800],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  child:
+                                                      LinearProgressIndicator(
+                                                    value: progress,
+                                                    minHeight: 10,
+                                                    backgroundColor:
+                                                        Colors.grey[300],
+                                                    valueColor:
+                                                        const AlwaysStoppedAnimation<
+                                                                Color>(
+                                                            Colors.green),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  'Picked: ${picked.toStringAsFixed(0)} / ${ordered.toStringAsFixed(0)}',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color: Colors.grey[700],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           );
                                         },
                                       ),
                                       const SizedBox(height: 12),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceEvenly,
-                                        children: [
-                                          ElevatedButton.icon(
-                                            icon: const Icon(Icons.visibility,
-                                                color: Colors.white),
-                                            label: const Text('View Details'),
-                                            onPressed: () {
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
-                                                const SnackBar(
-                                                    content: Text(
-                                                        'Delivery details view not implemented')),
-                                              );
-                                            },
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor:
-                                                  const Color(0xFF1976D2),
-                                              shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(8)),
-                                            ),
-                                          ),
-                                          if (pickingState != 'done' &&
-                                              pickingState != 'cancel')
-                                            ElevatedButton.icon(
-                                              icon: const Icon(
-                                                  Icons.check_circle,
-                                                  color: Colors.white),
-                                              label:
-                                                  const Text('Pick Products'),
-                                              onPressed: () {
-                                                _showPickingDialog(
+                                      pickingState == 'done' ||
+                                              pickingState == 'cancel'
+                                          ? SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton.icon(
+                                                icon: const Icon(
+                                                    Icons.visibility,
+                                                    color: Colors.white),
+                                                label: const Text(
+                                                    'View Details',
+                                                    style: TextStyle(
+                                                        color: Colors.white)),
+                                                onPressed: () {
+                                                  Navigator.push(
                                                     context,
-                                                    picking,
-                                                    orderLines,
-                                                    warehouseId,
-                                                    provider);
-                                              },
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.green,
-                                                shape: RoundedRectangleBorder(
+                                                    SlidingPageTransitionRL(
+                                                      page: DeliveryDetailsPage(
+                                                        pickingData: picking,
+                                                        provider: provider,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      const Color(0xFFA12424),
+                                                  shape: RoundedRectangleBorder(
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            8)),
+                                                            8),
+                                                  ),
+                                                ),
                                               ),
+                                            )
+                                          : Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceEvenly,
+                                              children: [
+                                                Expanded(
+                                                  child: ElevatedButton.icon(
+                                                    icon: const Icon(
+                                                        Icons.visibility,
+                                                        color: Colors.white),
+                                                    label: const Text(
+                                                        'View Details',
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.white)),
+                                                    onPressed: () {
+                                                      Navigator.push(
+                                                        context,
+                                                        SlidingPageTransitionRL(
+                                                          page:
+                                                              DeliveryDetailsPage(
+                                                            pickingData:
+                                                                picking,
+                                                            provider: provider,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          const Color(
+                                                              0xFFA12424),
+                                                      shape:
+                                                          RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: ElevatedButton.icon(
+                                                    icon: const Icon(
+                                                        Icons.check_circle,
+                                                        color: Colors.white),
+                                                    label: const Text(
+                                                        'Pick Products',
+                                                        style: TextStyle(
+                                                            color:
+                                                                Colors.white)),
+                                                    onPressed: () {
+                                                      _showPickingDialog(
+                                                          context,
+                                                          picking,
+                                                          orderLines,
+                                                          warehouseId,
+                                                          provider);
+                                                    },
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                      shape:
+                                                          RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                        ],
-                                      ),
                                     ],
                                   ),
                                 ),
@@ -1524,7 +1901,11 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                               Icons.visibility,
                                               color: Colors.white,
                                             ),
-                                            label: const Text('View Invoice'),
+                                            label: const Text(
+                                              'View Invoice',
+                                              style: TextStyle(
+                                                  color: Colors.white),
+                                            ),
                                             onPressed: () {
                                               ScaffoldMessenger.of(context)
                                                   .showSnackBar(
