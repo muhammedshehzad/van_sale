@@ -313,11 +313,11 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
     final orderPickingProvider =
         Provider.of<OrderPickingProvider>(context, listen: false);
     bool _isConfirmLoading =
-        false; // Local loading state for the Confirm button
-    // Create a local state for the selected customer
+        false;
+
     Customer? localSelectedCustomer = _selectedCustomer;
 
-    // Ensure customers are loaded before showing dialog
+
     if (orderPickingProvider.customers.isEmpty &&
         !orderPickingProvider.isLoadingCustomers) {
       orderPickingProvider.loadCustomers();
