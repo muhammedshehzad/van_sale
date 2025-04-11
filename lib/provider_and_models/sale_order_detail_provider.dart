@@ -43,8 +43,11 @@ class SaleOrderDetailProvider extends ChangeNotifier {
   }
 
   Map<String, dynamic>? get orderDetails => _orderDetails;
+
   bool get isLoading => _isLoading;
+
   String? get error => _error;
+
   bool get showActions => _showActions;
 
   void toggleActions() {
@@ -249,10 +252,10 @@ class SaleOrderDetailProvider extends ChangeNotifier {
   }
 
   Future<void> confirmPicking(
-      int pickingId,
-      Map<int, double> pickedQuantities,
-      bool validateImmediately,
-      ) async {
+    int pickingId,
+    Map<int, double> pickedQuantities,
+    bool validateImmediately,
+  ) async {
     final client = await SessionManager.getActiveClient();
     if (client == null) {
       throw Exception('No active Odoo session found.');
@@ -261,6 +264,22 @@ class SaleOrderDetailProvider extends ChangeNotifier {
     try {
       const doneField = 'quantity';
 
+      // Fetch current picking state
+      final pickingStateResult = await client.callKw({
+        'model': 'stock.picking',
+        'method': 'search_read',
+        'args': [
+          [
+            ['id', '=', pickingId]
+          ],
+          ['state'],
+        ],
+        'kwargs': {},
+      });
+      final currentState = pickingStateResult[0]['state'] as String;
+      debugPrint('Current picking state: $currentState');
+
+      // Fetch move lines
       final moveLines = await client.callKw({
         'model': 'stock.move.line',
         'method': 'search_read',
@@ -277,10 +296,11 @@ class SaleOrderDetailProvider extends ChangeNotifier {
         throw Exception('No move lines found for picking $pickingId');
       }
 
+      // Fetch ordered quantities from stock.move
       final moveIds = moveLines
           .map((line) => line['move_id'] is List
-          ? (line['move_id'] as List)[0] as int
-          : line['move_id'] as int)
+              ? (line['move_id'] as List)[0] as int
+              : line['move_id'] as int)
           .toList();
       final moveResult = await client.callKw({
         'model': 'stock.move',
@@ -298,10 +318,35 @@ class SaleOrderDetailProvider extends ChangeNotifier {
           move['id'] as int: move['product_uom_qty'] as double
       };
 
+      // Check if picking is already fully completed
+      bool isFullyPicked = true;
+      for (var moveLine in moveLines) {
+        int productId = (moveLine['product_id'] as List)[0] as int;
+        double pickedQty = moveLine[doneField] as double? ?? 0.0;
+        final moveId = moveLine['move_id'] is List
+            ? (moveLine['move_id'] as List)[0] as int
+            : moveLine['move_id'] as int;
+        double orderedQty = moveQtyMap[moveId] ?? 0.0;
+
+        if (pickedQty != orderedQty) {
+          isFullyPicked = false;
+          break;
+        }
+      }
+
+      // If picking is already done or fully picked with no changes needed
+      if (currentState == 'done' ||
+          (isFullyPicked && pickedQuantities.isEmpty)) {
+        throw Exception('Picking is already completed.');
+      }
+
+      // Process updates if there are changes
       bool hasChanges = false;
       for (var moveLine in moveLines) {
         int productId = (moveLine['product_id'] as List)[0] as int;
-        double pickedQty = pickedQuantities[productId] ?? 0.0;
+        double pickedQty = pickedQuantities[productId] ??
+            moveLine[doneField] as double? ??
+            0.0;
         final moveId = moveLine['move_id'] is List
             ? (moveLine['move_id'] as List)[0] as int
             : moveLine['move_id'] as int;
@@ -327,11 +372,14 @@ class SaleOrderDetailProvider extends ChangeNotifier {
         }
       }
 
-      if (validateImmediately || !hasChanges) {
+      // Validate if requested or no changes (and not already done)
+      if (validateImmediately || (!hasChanges && currentState != 'done')) {
         final validationResult = await client.callKw({
           'model': 'stock.picking',
           'method': 'button_validate',
-          'args': [pickingId],
+          'args': [
+            [pickingId]
+          ],
           'kwargs': {},
         });
 
@@ -372,12 +420,14 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       throw Exception('No active Odoo session found.');
     }
 
+    // Extract product IDs from order lines
     List<int> productIds = orderLines
         .where((line) =>
-    line['product_id'] is List && line['product_id'].length > 1)
+            line['product_id'] is List && line['product_id'].length > 1)
         .map((line) => (line['product_id'] as List)[0] as int)
         .toList();
 
+    // Fetch all internal stock locations for the warehouse (including children)
     final locationResult = await client.callKw({
       'model': 'stock.location',
       'method': 'search_read',
@@ -394,33 +444,40 @@ class SaleOrderDetailProvider extends ChangeNotifier {
     if (locationResult.isEmpty) {
       return Map.fromEntries(productIds.map((id) => MapEntry(id, 0.0)));
     }
-    final locationId = locationResult[0]['id'] as int;
+    final locationIds = locationResult.map((loc) => loc['id'] as int).toList();
 
+    // Fetch stock quantities for products in all internal locations
     final stockResult = await client.callKw({
       'model': 'stock.quant',
       'method': 'search_read',
       'args': [
         [
           ['product_id', 'in', productIds],
-          ['location_id', '=', locationId],
+          ['location_id', 'in', locationIds], // Check all internal locations
         ],
         ['product_id', 'quantity', 'reserved_quantity'],
       ],
       'kwargs': {},
     });
 
+    // Aggregate stock availability across all records
     Map<int, double> stockAvailability = {};
     for (var stock in stockResult) {
-      int productId = (stock['product_id'] as List)[0] as int;
-      double quantity = (stock['quantity'] as num).toDouble();
-      double reserved = (stock['reserved_quantity'] as num).toDouble();
-      stockAvailability[productId] = quantity - reserved;
+      final productId = (stock['product_id'] as List)[0] as int;
+      final quantity = (stock['quantity'] as num?)?.toDouble() ?? 0.0;
+      final reserved = (stock['reserved_quantity'] as num?)?.toDouble() ?? 0.0;
+      stockAvailability[productId] =
+          (stockAvailability[productId] ?? 0.0) + (quantity - reserved);
     }
 
+    // Ensure all product IDs have an entry, defaulting to 0 if not found
     for (var line in orderLines) {
-      int productId = (line['product_id'] as List)[0] as int;
+      final productId = (line['product_id'] as List)[0] as int;
       stockAvailability.putIfAbsent(productId, () => 0.0);
     }
+
+    // Ensure non-negative stock values
+    stockAvailability.updateAll((key, value) => value < 0 ? 0.0 : value);
 
     return stockAvailability;
   }
@@ -452,7 +509,7 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       case 'draft':
         statusMessage = 'Draft Quotation';
         detailedMessage =
-        'This quotation has not been sent to the customer yet.';
+            'This quotation has not been sent to the customer yet.';
         break;
       case 'sent':
         statusMessage = 'Quotation Sent';
@@ -462,7 +519,7 @@ class SaleOrderDetailProvider extends ChangeNotifier {
         statusMessage = 'Sales Order Confirmed';
         if (invoiceStatus == 'to invoice') {
           detailedMessage =
-          'The sales order is confirmed but waiting to be invoiced.';
+              'The sales order is confirmed but waiting to be invoiced.';
           showWarning = true;
         } else if (invoiceStatus == 'invoiced') {
           detailedMessage = 'The sales order is confirmed and fully invoiced.';

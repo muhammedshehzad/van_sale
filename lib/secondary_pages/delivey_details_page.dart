@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:van_sale_applicatioin/provider_and_models/order_picking_provider.dart';
 import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
 import 'dart:convert';
 import '../provider_and_models/cyllo_session_model.dart';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart';
+import 'package:camera/camera.dart';
+
+late List<CameraDescription> cameras;
+
+Future<void> initializeCameras() async {
+  cameras = await availableCameras();
+}
 
 class DeliveryDetailsPage extends StatefulWidget {
   final Map<String, dynamic> pickingData;
@@ -42,10 +53,8 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
     super.dispose();
   }
 
-  Future<Map<String, dynamic>> _fetchDeliveryDetails(
-      BuildContext context) async {
-    debugPrint(
-        'Starting _fetchDeliveryDetails for pickingId: ${widget.pickingData['id']}');
+  Future<Map<String, dynamic>> _fetchDeliveryDetails(BuildContext context) async {
+    debugPrint('Starting _fetchDeliveryDetails for pickingId: ${widget.pickingData['id']}');
     try {
       final client = await SessionManager.getActiveClient();
       if (client == null) {
@@ -55,73 +64,105 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
 
       final pickingId = widget.pickingData['id'] as int;
 
+      // Fetch stock.move.line
       debugPrint('Fetching stock.move.line for pickingId: $pickingId');
       final moveLinesResult = await client.callKw({
         'model': 'stock.move.line',
         'method': 'search_read',
         'args': [
-          [
-            ['picking_id', '=', pickingId]
-          ],
-          [
-            'id',
-            'product_id',
-            'quantity',
-            'move_id',
-            'product_uom_id',
-            'lot_id',
-            'lot_name'
-          ],
+          [['picking_id', '=', pickingId]],
+          ['id', 'product_id', 'quantity', 'move_id', 'product_uom_id', 'lot_id', 'lot_name'],
         ],
         'kwargs': {},
       });
       debugPrint('Move lines result: $moveLinesResult');
       final moveLines = List<Map<String, dynamic>>.from(moveLinesResult);
 
-      final moveIds =
-          moveLines.map((line) => (line['move_id'] as List)[0] as int).toList();
+      // Fetch stock.move
+      final moveIds = moveLines.map((line) => (line['move_id'] as List)[0] as int).toList();
       debugPrint('Fetching stock.move for moveIds: $moveIds');
       final moveResult = await client.callKw({
         'model': 'stock.move',
         'method': 'search_read',
         'args': [
-          [
-            ['id', 'in', moveIds]
-          ],
-          ['id', 'product_id', 'product_uom_qty', 'price_unit'],
+          [['id', 'in', moveIds]],
+          ['id', 'product_id', 'product_uom_qty', 'price_unit', 'sale_line_id'],
         ],
         'kwargs': {},
       });
       debugPrint('Move result: $moveResult');
       final moveMap = {for (var move in moveResult) move['id'] as int: move};
 
+      // Fetch sale order
+      debugPrint('Fetching stock.picking for pickingId: $pickingId');
+      final pickingResult = await client.callKw({
+        'model': 'stock.picking',
+        'method': 'search_read',
+        'args': [
+          [['id', '=', pickingId]],
+          ['origin'],
+        ],
+        'kwargs': {},
+      });
+      final picking = pickingResult[0] as Map<String, dynamic>;
+      final saleOrderName = picking['origin'] != false ? picking['origin'] as String : null;
+
+      Map<int, double> salePriceMap = {};
+      if (saleOrderName != null) {
+        debugPrint('Fetching sale.order for name: $saleOrderName');
+        final saleOrderResult = await client.callKw({
+          'model': 'sale.order',
+          'method': 'search_read',
+          'args': [
+            [['name', '=', saleOrderName]],
+            ['id'],
+          ],
+          'kwargs': {},
+        });
+        debugPrint('Sale order result: $saleOrderResult');
+        if (saleOrderResult.isNotEmpty) {
+          final saleOrderId = saleOrderResult[0]['id'] as int;
+          debugPrint('Fetching sale.order.line for saleOrderId: $saleOrderId');
+          final saleLineResult = await client.callKw({
+            'model': 'sale.order.line',
+            'method': 'search_read',
+            'args': [
+              [['order_id', '=', saleOrderId]],
+              ['product_id', 'price_unit'],
+            ],
+            'kwargs': {},
+          });
+          debugPrint('Sale order line result: $saleLineResult');
+          salePriceMap = {
+            for (var line in saleLineResult)
+              (line['product_id'] as List)[0] as int: line['price_unit'] as double
+          };
+        }
+      }
+
+      // Update moveLines with ordered_qty and price_unit
       for (var line in moveLines) {
         final moveId = (line['move_id'] as List)[0] as int;
         final move = moveMap[moveId];
         line['ordered_qty'] = move?['product_uom_qty'] as double? ?? 0.0;
-        line['price_unit'] = move?['price_unit'] as double? ?? 0.0;
+        final productId = (line['product_id'] as List)[0] as int;
+        line['price_unit'] = salePriceMap[productId] ?? move?['price_unit'] as double? ?? 0.0;
       }
 
-      final productIds = moveLines
-          .map((line) => (line['product_id'] as List)[0] as int)
-          .toSet()
-          .toList();
+      // Fetch product.product
+      final productIds = moveLines.map((line) => (line['product_id'] as List)[0] as int).toSet().toList();
       debugPrint('Fetching product.product for productIds: $productIds');
       final productResult = await client.callKw({
         'model': 'product.product',
         'method': 'search_read',
         'args': [
-          [
-            ['id', 'in', productIds]
-          ],
-          ['id', 'name', 'default_code', 'barcode', 'image_128', 'categ_id'],
+          [['id', 'in', productIds]],
+          ['id', 'name', 'default_code', 'barcode', 'image_128', 'categ_id', 'list_price'],
         ],
         'kwargs': {},
       });
       debugPrint('Product result: $productResult');
-      final productMap = {
-        for (var product in productResult) product['id'] as int: product
-      };
+      final productMap = {for (var product in productResult) product['id'] as int: product};
 
       for (var line in moveLines) {
         final productId = (line['product_id'] as List)[0] as int;
@@ -130,24 +171,21 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           line['product_code'] = product['default_code'] ?? '';
           line['product_barcode'] = product['barcode'] ?? '';
           line['product_image'] = product['image_128'];
-          line['product_category'] = product['categ_id'] != false
-              ? (product['categ_id'] as List)[1] as String
-              : '';
+          line['product_category'] = product['categ_id'] != false ? (product['categ_id'] as List)[1] as String : '';
+          if (line['price_unit'] == 0.0) {
+            line['price_unit'] = product['list_price'] as double? ?? 0.0;
+          }
         }
       }
 
-      final uomIds = moveLines
-          .map((line) => (line['product_uom_id'] as List)[0] as int)
-          .toSet()
-          .toList();
+      // Fetch uom.uom
+      final uomIds = moveLines.map((line) => (line['product_uom_id'] as List)[0] as int).toSet().toList();
       debugPrint('Fetching uom.uom for uomIds: $uomIds');
       final uomResult = await client.callKw({
         'model': 'uom.uom',
         'method': 'search_read',
         'args': [
-          [
-            ['id', 'in', uomIds]
-          ],
+          [['id', 'in', uomIds]],
           ['id', 'name', 'category_id'],
         ],
         'kwargs': {},
@@ -165,41 +203,25 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         }
       }
 
+      // Fetch stock.picking
       debugPrint('Fetching stock.picking for pickingId: $pickingId');
-      final pickingResult = await client.callKw({
+      final pickingResults = await client.callKw({
         'model': 'stock.picking',
         'method': 'search_read',
         'args': [
-          [
-            ['id', '=', pickingId]
-          ],
-          [
-            'id',
-            'name',
-            'state',
-            'scheduled_date',
-            'date_done',
-            'partner_id',
-            'location_id',
-            'location_dest_id',
-            'origin',
-            'carrier_id',
-            'weight',
-            'note',
-            'picking_type_id',
-            'company_id',
-            'user_id'
-          ],
+          [['id', '=', pickingId]],
+          ['id', 'name', 'state', 'scheduled_date', 'date_done', 'partner_id', 'location_id', 'location_dest_id', 'origin', 'carrier_id', 'weight', 'note', 'picking_type_id', 'company_id', 'user_id'],
         ],
         'kwargs': {},
       });
-      debugPrint('Picking result: $pickingResult');
-      if (pickingResult.isEmpty) {
+      debugPrint('Picking result: $pickingResults');
+      if (pickingResults.isEmpty) {
         debugPrint('Error: Picking not found');
         throw Exception('Picking not found');
       }
-      final pickingDetail = pickingResult[0] as Map<String, dynamic>;
+      final pickingDetail = pickingResults[0] as Map<String, dynamic>;
 
+      // Fetch partner
       Map<String, dynamic>? partnerAddress;
       if (pickingDetail['partner_id'] != false) {
         final partnerId = (pickingDetail['partner_id'] as List)[0] as int;
@@ -208,21 +230,8 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           'model': 'res.partner',
           'method': 'search_read',
           'args': [
-            [
-              ['id', '=', partnerId]
-            ],
-            [
-              'id',
-              'name',
-              'street',
-              'street2',
-              'city',
-              'state_id',
-              'country_id',
-              'zip',
-              'phone',
-              'email'
-            ],
+            [['id', '=', partnerId]],
+            ['id', 'name', 'street', 'street2', 'city', 'state_id', 'country_id', 'zip', 'phone', 'email'],
           ],
           'kwargs': {},
         });
@@ -232,36 +241,32 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         }
       }
 
+      // Fetch status history
       debugPrint('Fetching mail.message for pickingId: $pickingId');
       final statusHistoryResult = await client.callKw({
         'model': 'mail.message',
         'method': 'search_read',
         'args': [
-          [
-            ['model', '=', 'stock.picking'],
-            ['res_id', '=', pickingId]
-          ],
+          [['model', '=', 'stock.picking'], ['res_id', '=', pickingId]],
           ['id', 'date', 'body', 'author_id'],
         ],
         'kwargs': {'order': 'date desc', 'limit': 10},
       });
       debugPrint('Status history result: $statusHistoryResult');
-      final statusHistory =
-          List<Map<String, dynamic>>.from(statusHistoryResult);
+      final statusHistory = List<Map<String, dynamic>>.from(statusHistoryResult);
 
-      final totalPicked = moveLines.fold(
-          0.0, (sum, line) => sum + (line['quantity'] as double? ?? 0.0));
-      final totalOrdered = moveLines.fold(
-          0.0, (sum, line) => sum + (line['ordered_qty'] as double));
+      // Calculate totals
+      final totalPicked = moveLines.fold(0.0, (sum, line) => sum + (line['quantity'] as double? ?? 0.0));
+      final totalOrdered = moveLines.fold(0.0, (sum, line) => sum + (line['ordered_qty'] as double));
       final totalValue = moveLines.fold(
           0.0,
-          (sum, line) =>
-              sum +
-              ((line['price_unit'] as double) *
-                  (line['quantity'] as double? ?? 0.0)));
+              (sum, line) => sum + ((line['price_unit'] as double) * (line['quantity'] as double? ?? 0.0)));
 
-      debugPrint(
-          'Data fetched successfully: moveLines: ${moveLines.length}, totalPicked: $totalPicked');
+      // Log final data for verification
+      debugPrint('Final moveLines after updates: $moveLines');
+      debugPrint('Calculated totalValue: $totalValue');
+
+      debugPrint('Data fetched successfully: moveLines: ${moveLines.length}, totalPicked: $totalPicked');
       return {
         'moveLines': moveLines,
         'totalPicked': totalPicked,
@@ -277,34 +282,8 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
     } finally {
       debugPrint('_fetchDeliveryDetails completed');
     }
-  } // Future<void> _captureSignature() async {
-  //   final result = await Navigator.push(
-  //     context,
-  //     MaterialPageRoute(
-  //       builder: (context) => SignaturePad(
-  //         title: 'Delivery Signature',
-  //       ),
-  //     ),
-  //   );
-  //
-  //   if (result != null) {
-  //     setState(() {
-  //       _signature = result;
-  //     });
-  //   }
-  // }
-
-  // Future<void> _capturePhoto() async {
-  //   final imagePath = await ImageHelper.captureImage(context);
-  //   if (imagePath != null) {
-  //     setState(() {
-  //       _deliveryPhotos.add(imagePath);
-  //     });
-  //   }
-  // }
-
+  }
   Future<void> _submitDelivery(BuildContext context, int pickingId) async {
-    // Implement submission of delivery confirmation with signature and photos
     try {
       setState(() {
         _isLoading = true;
@@ -314,11 +293,12 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       if (client == null) {
         throw Exception('No active Odoo session found.');
       }
+      print('Odoo client initialized successfully');
 
       // Upload signature and photos as attachments
       List<int> attachmentIds = [];
-
       if (_signature != null) {
+        print('Uploading signature...');
         final signatureAttachment = await client.callKw({
           'model': 'ir.attachment',
           'method': 'create',
@@ -329,15 +309,17 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
               'datas': _signature,
               'res_model': 'stock.picking',
               'res_id': pickingId,
+              'mimetype': 'image/png',
             }
           ],
           'kwargs': {},
         });
-
         attachmentIds.add(signatureAttachment as int);
+        print('Signature uploaded, ID: $signatureAttachment');
       }
 
       for (var i = 0; i < _deliveryPhotos.length; i++) {
+        print('Uploading photo ${i + 1}...');
         final photoAttachment = await client.callKw({
           'model': 'ir.attachment',
           'method': 'create',
@@ -348,48 +330,172 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
               'datas': _deliveryPhotos[i],
               'res_model': 'stock.picking',
               'res_id': pickingId,
+              'mimetype': 'image/jpeg',
             }
           ],
           'kwargs': {},
         });
-
         attachmentIds.add(photoAttachment as int);
+        print('Photo ${i + 1} uploaded, ID: $photoAttachment');
       }
 
-      // Update delivery note if provided
-      if (_noteController.text.isNotEmpty) {
+      // Post a message to the chatter with note and attachments
+      if (_noteController.text.isNotEmpty || attachmentIds.isNotEmpty) {
+        print('Posting message to picking with note and attachments...');
+        final messageBody = _noteController.text.isNotEmpty
+            ? _noteController.text
+            : 'Delivery confirmed with attachments';
         await client.callKw({
           'model': 'stock.picking',
-          'method': 'write',
+          'method': 'message_post',
           'args': [
-            [pickingId],
-            {'note': _noteController.text},
+            [pickingId]
           ],
-          'kwargs': {},
+          'kwargs': {
+            'body': messageBody,
+            'attachment_ids': attachmentIds,
+            'message_type': 'comment',
+            'subtype_id': 1,
+          },
         });
+        print('Message posted successfully');
       }
 
-      // Update delivery status (example - adjust based on your workflow)
-      await client.callKw({
+      // Check picking state
+      print('Fetching picking state...');
+      final pickingStateResult = await client.callKw({
         'model': 'stock.picking',
-        'method': 'action_confirm_delivery', // Replace with your actual method
+        'method': 'search_read',
         'args': [
-          [pickingId],
-          {
-            'has_signature': _signature != null,
-            'has_photos': _deliveryPhotos.isNotEmpty,
-            'attachment_ids': attachmentIds,
-          }
+          [
+            ['id', '=', pickingId]
+          ],
+          ['state'],
         ],
         'kwargs': {},
       });
+      final currentState = pickingStateResult[0]['state'] as String;
+      print('Picking state before validation: $currentState');
+      if (currentState != 'assigned') {
+        if (currentState == 'confirmed') {
+          print('Attempting to assign picking...');
+          await client.callKw({
+            'model': 'stock.picking',
+            'method': 'action_assign',
+            'args': [
+              [pickingId]
+            ],
+            'kwargs': {},
+          });
+          print('Picking assigned');
+          final newStateResult = await client.callKw({
+            'model': 'stock.picking',
+            'method': 'search_read',
+            'args': [
+              [
+                ['id', '=', pickingId]
+              ],
+              ['state'],
+            ],
+            'kwargs': {},
+          });
+          final newState = newStateResult[0]['state'] as String;
+          print('New picking state: $newState');
+          if (newState != 'assigned') {
+            throw Exception(
+                'Failed to move picking to "Assigned" state. Current state: $newState');
+          }
+        } else {
+          throw Exception(
+              'Picking must be in "Assigned" state to validate. Current state: $currentState');
+        }
+      }
+
+      // Update quantities in stock.move.line (using standard fields)
+      print('Fetching move lines...');
+      final moveLines = await client.callKw({
+        'model': 'stock.move.line',
+        'method': 'search_read',
+        'args': [
+          [
+            ['picking_id', '=', pickingId]
+          ],
+          ['id', 'qty_done', 'product_id', 'state'], // Minimal standard fields
+        ],
+        'kwargs': {},
+      });
+      print('Move lines fetched: $moveLines');
+
+      // Fetch stock.move to get demanded quantities
+      final moveIds = moveLines
+          .map((line) => line['move_id'] is List ? line['move_id'][0] : null)
+          .where((id) => id != null)
+          .toList();
+      final stockMoves = moveIds.isNotEmpty
+          ? await client.callKw({
+              'model': 'stock.move',
+              'method': 'search_read',
+              'args': [
+                [
+                  ['id', 'in', moveIds]
+                ],
+                ['id', 'product_uom_qty'],
+              ],
+              'kwargs': {},
+            })
+          : [];
+      final moveQtyMap = {
+        for (var move in stockMoves) move['id']: move['product_uom_qty']
+      };
+
+      for (var line in moveLines) {
+        final currentQtyDone = (line['qty_done'] as num?)?.toDouble() ?? 0.0;
+        final moveId = line['move_id'] is List ? line['move_id'][0] : null;
+        final demandedQty = moveId != null
+            ? (moveQtyMap[moveId] as num?)?.toDouble() ?? 0.0
+            : 0.0;
+        final productId =
+            line['product_id'] is List ? line['product_id'][1] : 'Unknown';
+        print(
+            'Line ${line['id']} ($productId): qty_done=$currentQtyDone, demanded=$demandedQty');
+
+        if (currentQtyDone == 0.0 && demandedQty > 0.0) {
+          print('Updating qty_done for line ${line['id']} to $demandedQty');
+          await client.callKw({
+            'model': 'stock.move.line',
+            'method': 'write',
+            'args': [
+              [line['id']],
+              {'qty_done': demandedQty},
+            ],
+            'kwargs': {},
+          });
+          print('Updated qty_done for line ${line['id']}');
+        } else if (currentQtyDone == 0.0 && demandedQty == 0.0) {
+          throw Exception(
+              'No quantity set for line ${line['id']} ($productId). Cannot validate picking.');
+        }
+      }
+
+      // Validate the picking
+      print('Validating picking $pickingId...');
+      await client.callKw({
+        'model': 'stock.picking',
+        'method': 'button_validate',
+        'args': [
+          [pickingId]
+        ],
+        'kwargs': {},
+      });
+      print('Picking validated successfully');
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Delivery confirmed successfully')),
       );
 
-      Navigator.pop(context, true); // Return with success result
+      Navigator.pop(context, true);
     } catch (e) {
+      print('Submission error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
       );
@@ -397,6 +503,64 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _captureSignature() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SignaturePad(
+          title: 'Delivery Signature',
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _signature = result;
+      });
+    }
+  }
+
+  Future<void> _capturePhoto() async {
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      try {
+        if (cameras.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No cameras available')),
+          );
+          return;
+        }
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CameraScreen(camera: cameras.first),
+          ),
+        );
+        if (result != null) {
+          final base64Image = base64Encode(result);
+          setState(() {
+            _deliveryPhotos.add(base64Image);
+          });
+        }
+      } catch (e) {
+        print('Error capturing photo: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error capturing photo: $e')),
+        );
+      }
+    } else if (status.isDenied || status.isPermanentlyDenied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Camera permission is required to take photos.'),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
     }
   }
 
@@ -843,95 +1007,68 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                       itemCount: moveLines.length,
                       itemBuilder: (context, index) {
                         final line = moveLines[index];
-                        debugPrint('Line $index: $line'); // Log the entire line
+                        debugPrint('Line $index: $line');
 
                         // Safely handle product_id
                         final productId = line['product_id'];
                         if (productId is! List) {
-                          debugPrint(
-                              'Error: product_id is not a List, it is ${productId.runtimeType} with value $productId');
-                          return const ListTile(
-                              title: Text('Invalid product data'));
+                          debugPrint('Error: product_id is not a List, it is ${productId.runtimeType} with value $productId');
+                          return const ListTile(title: Text('Invalid product data'));
                         }
-                        final productName = (productId as List).length > 1
-                            ? productId[1] as String
-                            : 'Unknown Product';
-                        debugPrint(
-                            'productName for line $index: $productName (type: ${productName.runtimeType})');
+                        final productName = (productId as List).length > 1 ? productId[1] as String : 'Unknown Product';
+                        debugPrint('productName for line $index: $productName (type: ${productName.runtimeType})');
 
                         // Safely handle quantity
                         final pickedQty = line['quantity'] as double? ?? 0.0;
-                        debugPrint(
-                            'pickedQty for line $index: $pickedQty (type: ${pickedQty.runtimeType})');
+                        debugPrint('pickedQty for line $index: $pickedQty (type: ${pickedQty.runtimeType})');
 
                         // Safely handle ordered_qty
-                        final orderedQty =
-                            line['ordered_qty'] as double? ?? 0.0;
-                        debugPrint(
-                            'orderedQty for line $index: $orderedQty (type: ${orderedQty.runtimeType})');
+                        final orderedQty = line['ordered_qty'] as double? ?? 0.0;
+                        debugPrint('orderedQty for line $index: $orderedQty (type: ${orderedQty.runtimeType})');
 
                         // Safely handle product_code
-                        final productCode = line['product_code'] is String
-                            ? line['product_code'] as String
-                            : '';
-                        debugPrint(
-                            'productCode for line $index: $productCode (type: ${productCode.runtimeType})');
+                        final productCode = line['product_code'] is String ? line['product_code'] as String : '';
+                        debugPrint('productCode for line $index: $productCode (type: ${productCode.runtimeType})');
 
                         // Safely handle product_barcode
-                        final productBarcode = line['product_barcode'] is String
-                            ? line['product_barcode'] as String
-                            : '';
-                        debugPrint(
-                            'productBarcode for line $index: $productBarcode (type: ${productBarcode.runtimeType})');
+                        final productBarcode = line['product_barcode'] is String ? line['product_barcode'] as String : '';
+                        debugPrint('productBarcode for line $index: $productBarcode (type: ${productBarcode.runtimeType})');
 
                         // Safely handle uom_name
-                        final uomName = line['uom_name'] is String
-                            ? line['uom_name'] as String
-                            : 'Units';
-                        debugPrint(
-                            'uomName for line $index: $uomName (type: ${uomName.runtimeType})');
+                        final uomName = line['uom_name'] is String ? line['uom_name'] as String : 'Units';
+                        debugPrint('uomName for line $index: $uomName (type: ${uomName.runtimeType})');
 
                         // Safely handle price_unit
                         final priceUnit = line['price_unit'] as double? ?? 0.0;
-                        debugPrint(
-                            'priceUnit for line $index: $priceUnit (type: ${priceUnit.runtimeType})');
+                        debugPrint('priceUnit for line $index: $priceUnit (type: ${priceUnit.runtimeType})');
 
                         // Safely handle lot_name
-                        final lotName = line['lot_name'] != false &&
-                                line['lot_name'] is String
-                            ? line['lot_name'] as String
-                            : null;
-                        debugPrint(
-                            'lotName for line $index: $lotName (type: ${lotName?.runtimeType ?? 'null'})');
+                        final lotName = line['lot_name'] != false && line['lot_name'] is String ? line['lot_name'] as String : null;
+                        debugPrint('lotName for line $index: $lotName (type: ${lotName?.runtimeType ?? 'null'})');
 
                         // Safely handle product_image
                         final productImage = line['product_image'];
-                        // debugPrint('productImage for line $index: $productImage (type: ${productImage.runtimeType})');
                         Widget imageWidget;
-                        if (productImage != null &&
-                            productImage != false &&
-                            productImage is String) {
+                        if (productImage != null && productImage != false && productImage is String) {
                           try {
                             imageWidget = Image.memory(
                               base64Decode(productImage as String),
                               fit: BoxFit.cover,
                             );
                           } catch (e) {
-                            debugPrint(
-                                'Error decoding productImage for line $index: $e');
-                            imageWidget = Icon(Icons.inventory_2,
-                                color: Colors.grey[400], size: 30);
+                            debugPrint('Error decoding productImage for line $index: $e');
+                            imageWidget = Icon(Icons.inventory_2, color: Colors.grey[400], size: 30);
                           }
                         } else {
-                          imageWidget = Icon(Icons.inventory_2,
-                              color: Colors.grey[400], size: 30);
+                          imageWidget = Icon(Icons.inventory_2, color: Colors.grey[400], size: 30);
                         }
 
                         final lineValue = priceUnit * pickedQty;
+                        debugPrint('lineValue for line $index: $lineValue');
 
                         return Card(
                           elevation: 1,
-                          margin: const EdgeInsets.only(bottom: 12),
+                          margin: const EdgeInsets.only(bottom: 12), // Fix typo: should be 'bottom'
                           child: Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Column(
@@ -940,7 +1077,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Product image or placeholder
                                     Container(
                                       width: 60,
                                       height: 60,
@@ -951,11 +1087,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                       child: imageWidget,
                                     ),
                                     const SizedBox(width: 12),
-                                    // Product details
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             productName,
@@ -967,23 +1101,17 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                           if (productCode.isNotEmpty)
                                             Text(
                                               'SKU: $productCode',
-                                              style: TextStyle(
-                                                  color: Colors.grey[700],
-                                                  fontSize: 13),
+                                              style: TextStyle(color: Colors.grey[700], fontSize: 13),
                                             ),
                                           if (productBarcode.isNotEmpty)
                                             Text(
                                               'Barcode: $productBarcode',
-                                              style: TextStyle(
-                                                  color: Colors.grey[700],
-                                                  fontSize: 13),
+                                              style: TextStyle(color: Colors.grey[700], fontSize: 13),
                                             ),
                                           if (lotName != null)
                                             Text(
                                               'Lot: $lotName',
-                                              style: TextStyle(
-                                                  color: Colors.grey[700],
-                                                  fontSize: 13),
+                                              style: TextStyle(color: Colors.grey[700], fontSize: 13),
                                             ),
                                         ],
                                       ),
@@ -991,48 +1119,37 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                   ],
                                 ),
                                 const Divider(height: 24),
-                                // Quantity and pricing information
                                 Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             'Ordered',
-                                            style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 12),
+                                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
                                           ),
                                           Text(
                                             '${orderedQty.toStringAsFixed(2)} $uomName',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.bold),
+                                            style: const TextStyle(fontWeight: FontWeight.bold),
                                           ),
                                         ],
                                       ),
                                     ),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             'Picked',
-                                            style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 12),
+                                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
                                           ),
                                           Text(
                                             '${pickedQty.toStringAsFixed(2)} $uomName',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              color: pickedQty >= orderedQty
-                                                  ? Colors.green
-                                                  : Colors.orange,
+                                              color: pickedQty >= orderedQty ? Colors.green : Colors.orange,
                                             ),
                                           ),
                                         ],
@@ -1040,19 +1157,18 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                     ),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
+                                        crossAxisAlignment: CrossAxisAlignment.end,
                                         children: [
                                           Text(
                                             'Value',
-                                            style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 12),
+                                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
                                           ),
                                           Text(
                                             '\$${lineValue.toStringAsFixed(2)}',
                                             style: const TextStyle(
-                                                fontWeight: FontWeight.bold),
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black,
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -1060,15 +1176,10 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-                                // Progress bar for this line
                                 LinearProgressIndicator(
-                                  value: orderedQty > 0
-                                      ? (pickedQty / orderedQty).clamp(0.0, 1.0)
-                                      : 0.0,
+                                  value: orderedQty > 0 ? (pickedQty / orderedQty).clamp(0.0, 1.0) : 0.0,
                                   backgroundColor: Colors.grey[200],
-                                  color: pickedQty >= orderedQty
-                                      ? Colors.green
-                                      : Colors.orange,
+                                  color: pickedQty >= orderedQty ? Colors.green : Colors.orange,
                                   minHeight: 5,
                                 ),
                                 const SizedBox(height: 8),
@@ -1076,9 +1187,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                   '${orderedQty > 0 ? ((pickedQty / orderedQty) * 100).toStringAsFixed(0) : 0}% complete',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: pickedQty >= orderedQty
-                                        ? Colors.green
-                                        : Colors.grey[600],
+                                    color: pickedQty >= orderedQty ? Colors.green : Colors.grey[600],
                                   ),
                                 ),
                               ],
@@ -1156,7 +1265,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
 
                               _signature == null
                                   ? ElevatedButton.icon(
-                                      onPressed: () {},
+                                      onPressed: _captureSignature,
                                       icon: const Icon(
                                         Icons.draw,
                                         color: Colors.white,
@@ -1209,7 +1318,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                               const SizedBox(height: 8),
 
                               ElevatedButton.icon(
-                                onPressed: () {},
+                                onPressed: _capturePhoto,
                                 icon: const Icon(Icons.camera_alt,
                                     color: Colors.white),
                                 label: const Text('Take Photo'),
@@ -1501,4 +1610,214 @@ class TimelineWidget extends StatelessWidget {
   }
 }
 
-// Import needed at the top of the file
+class SignaturePad extends StatefulWidget {
+  final String title;
+
+  const SignaturePad({Key? key, required this.title}) : super(key: key);
+
+  @override
+  _SignaturePadState createState() => _SignaturePadState();
+}
+
+class _SignaturePadState extends State<SignaturePad> {
+  final List<List<Offset>> _strokes = <List<Offset>>[];
+  List<Offset> _currentStroke = <Offset>[];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        backgroundColor: const Color(0xFFA12424),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.clear),
+            onPressed: _clear,
+          ),
+        ],
+      ),
+      body: Container(
+        color: Colors.white,
+        child: GestureDetector(
+          onPanStart: (details) {
+            setState(() {
+              _currentStroke = <Offset>[];
+              _currentStroke.add(details.localPosition);
+              _strokes.add(_currentStroke);
+            });
+          },
+          onPanUpdate: (details) {
+            setState(() {
+              _currentStroke.add(details.localPosition);
+            });
+          },
+          child: CustomPaint(
+            painter: SignaturePainter(strokes: _strokes),
+            size: Size.infinite,
+          ),
+        ),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: _saveSignature,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFA12424),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Save Signature'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _clear() {
+    setState(() {
+      _strokes.clear();
+    });
+  }
+
+  Future<void> _saveSignature() async {
+    if (_strokes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign before saving')),
+      );
+      return;
+    }
+
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final size = MediaQuery.of(context).size;
+
+      canvas.drawColor(Colors.white, BlendMode.src);
+
+      final paint = Paint()
+        ..color = Colors.black
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 5.0;
+
+      for (final stroke in _strokes) {
+        for (int i = 0; i < stroke.length - 1; i++) {
+          canvas.drawLine(stroke[i], stroke[i + 1], paint);
+        }
+      }
+
+      final picture = recorder.endRecording();
+      final img =
+          await picture.toImage(size.width.toInt(), size.height.toInt());
+      final pngBytes = await img.toByteData(format: ui.ImageByteFormat.png);
+
+      if (pngBytes != null) {
+        final base64Image = base64Encode(Uint8List.view(pngBytes.buffer));
+        Navigator.pop(context, base64Image);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving signature: $e')),
+      );
+    }
+  }
+}
+
+class SignaturePainter extends CustomPainter {
+  final List<List<Offset>> strokes;
+
+  SignaturePainter({required this.strokes});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 5.0;
+
+    for (final stroke in strokes) {
+      for (int i = 0; i < stroke.length - 1; i++) {
+        if (stroke[i] != Offset.infinite && stroke[i + 1] != Offset.infinite) {
+          canvas.drawLine(stroke[i], stroke[i + 1], paint);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(SignaturePainter oldDelegate) => true;
+}
+
+class CameraScreen extends StatefulWidget {
+  final CameraDescription camera;
+
+  const CameraScreen({Key? key, required this.camera}) : super(key: key);
+
+  @override
+  _CameraScreenState createState() => _CameraScreenState();
+}
+
+class _CameraScreenState extends State<CameraScreen> {
+  late CameraController _controller;
+  late Future<void> _initializeControllerFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = CameraController(
+      widget.camera,
+      ResolutionPreset.medium,
+    );
+    _initializeControllerFuture = _controller.initialize();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Take Photo')),
+      body: FutureBuilder<void>(
+        future: _initializeControllerFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return CameraPreview(_controller);
+          } else {
+            return const Center(child: CircularProgressIndicator());
+          }
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          try {
+            await _initializeControllerFuture;
+            final XFile image = await _controller.takePicture();
+            final bytes = await image.readAsBytes();
+            Navigator.pop(context, bytes);
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $e')),
+            );
+          }
+        },
+        child: const Icon(Icons.camera_alt),
+      ),
+    );
+  }
+}

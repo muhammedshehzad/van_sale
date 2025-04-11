@@ -26,7 +26,7 @@ class _LoginState extends State<Login> {
   List<DropdownMenuItem<String>> dropdownItems = [];
   OdooClient? client;
   TextEditingController urlController =
-      TextEditingController(text: "http://10.0.2.2:8018/");
+      TextEditingController();
   TextEditingController emailController = TextEditingController();
   TextEditingController passwordController = TextEditingController();
 
@@ -237,7 +237,7 @@ class _LoginState extends State<Login> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
           Container(
