@@ -312,7 +312,8 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
   void _showCustomerSelectionDialog(BuildContext context) {
     final orderPickingProvider =
         Provider.of<OrderPickingProvider>(context, listen: false);
-
+    bool _isConfirmLoading =
+        false; // Local loading state for the Confirm button
     // Create a local state for the selected customer
     Customer? localSelectedCustomer = _selectedCustomer;
 
@@ -329,7 +330,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
         builder: (context, setDialogState) => Dialog(
           backgroundColor: Colors.transparent,
           child: Consumer<OrderPickingProvider>(
-            builder: (context, provider, child) {
+            builder: (context, orderPickingProvider, child) {
               return Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -404,23 +405,24 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          provider.isLoadingCustomers
+                          orderPickingProvider.isLoadingCustomers
                               ? const Center(
                                   child: SizedBox(
                                       height: 40,
                                       child: CircularProgressIndicator()))
                               : CustomDropdown<Customer>.search(
-                                  items: provider.customers,
+                                  items: orderPickingProvider.customers,
                                   hintText: 'Select or search customer...',
                                   searchHintText: 'Search customers...',
-                                  noResultFoundText: provider.customers.isEmpty
+                                  noResultFoundText: orderPickingProvider
+                                          .customers.isEmpty
                                       ? 'No customers found. Create a new customer?'
                                       : 'No matching customers found',
-                                  noResultFoundBuilder: provider
+                                  noResultFoundBuilder: orderPickingProvider
                                           .customers.isEmpty
                                       ? (context, searchText) {
                                           return GestureDetector(
-                                            onTap: () => provider
+                                            onTap: () => orderPickingProvider
                                                 .showCreateCustomerDialog(
                                                     context),
                                             child: Container(
@@ -567,8 +569,8 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               TextButton.icon(
-                                onPressed: () =>
-                                    provider.showCreateCustomerDialog(context),
+                                onPressed: () => orderPickingProvider
+                                    .showCreateCustomerDialog(context),
                                 icon: const Icon(Icons.add_circle_outline,
                                     color: primaryColor, size: 16),
                                 label: const Text(
@@ -578,7 +580,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                               ),
                               TextButton.icon(
                                 onPressed: () {
-                                  provider.loadCustomers();
+                                  orderPickingProvider.loadCustomers();
                                   setDialogState(() {
                                     localSelectedCustomer = null;
                                   });
@@ -592,7 +594,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                   'Refresh',
                                   style: TextStyle(color: primaryColor),
                                 ),
-                              )
+                              ),
                             ],
                           ),
                           if (localSelectedCustomer != null) ...[
@@ -750,34 +752,71 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                               ),
                             ),
                           ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            onPressed: localSelectedCustomer == null
-                                ? null
-                                : () {
-                                    setState(() {
-                                      _selectedCustomer = localSelectedCustomer;
-                                    });
-                                    // Navigator.of(context).pop();
-                                    _createSaleOrderInOdoo(context);
-                                  },
-                            child: Text(
-                              'Confirm',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                          Consumer<SalesOrderProvider>(
+                            builder: (context, salesOrderProvider, child) {
+                              return ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: primaryColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                onPressed: localSelectedCustomer == null ||
+                                        _isConfirmLoading
+                                    ? null
+                                    : () async {
+                                        setDialogState(() {
+                                          _isConfirmLoading =
+                                              true; // Start loading
+                                        });
+                                        setState(() {
+                                          _selectedCustomer =
+                                              localSelectedCustomer;
+                                        });
+                                        try {
+                                          await _createSaleOrderInOdoo(context);
+                                        } finally {
+                                          setDialogState(() {
+                                            _isConfirmLoading =
+                                                false; // Stop loading
+                                          });
+                                        }
+                                      },
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Text(
+                                      'Confirm',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Visibility(
+                                      visible: _isConfirmLoading,
+                                      child: const Padding(
+                                        padding: EdgeInsets.only(left: 8),
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                    Colors.white),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -1543,22 +1582,33 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                           onPressed: provider.isLoading
                               ? null
                               : () => _showCustomerSelectionDialog(context),
-                          child: provider.isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text(
-                                  'Confirm',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                'Confirm',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Visibility(
+                                visible: provider.isLoading,
+                                child: const Padding(
+                                  padding: EdgeInsets.only(left: 8),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                    ),
                                   ),
                                 ),
+                              ),
+                            ],
+                          ),
                         );
                       },
                     ),

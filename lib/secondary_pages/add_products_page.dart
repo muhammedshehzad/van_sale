@@ -83,13 +83,8 @@ class LogoutService {
 }
 
 class LogoutButton extends StatelessWidget {
-  final Color textColor;
-  final Color backgroundColor;
-
   const LogoutButton({
     Key? key,
-    this.textColor = Colors.white,
-    required this.backgroundColor,
   }) : super(key: key);
 
   @override
@@ -111,7 +106,7 @@ class LogoutButton extends StatelessWidget {
       builder: (BuildContext context) {
         return AlertDialog(
           shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
           elevation: 8.0,
           title: const Text('Confirm Logout',
               style: TextStyle(fontWeight: FontWeight.bold)),
@@ -128,11 +123,12 @@ class LogoutButton extends StatelessWidget {
                 Navigator.pushNamedAndRemoveUntil(
                   context,
                   '/login',
-                      (Route<dynamic> route) => false,
+                  (Route<dynamic> route) => false,
                 );
               },
               child: const Text('Logout'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             ),
           ],
         );
@@ -160,6 +156,7 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
   TextEditingController searchController = TextEditingController();
   Map<String, bool> selectedProducts = {};
   Map<String, int> quantities = {};
+  bool _isLoading = false; // Add loading state variable
 
   @override
   void initState() {
@@ -477,24 +474,22 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
           ),
         ),
         actions: [
-          // IconButton(
-          //   onPressed: () {
-          //     Navigator.push(
-          //         context,
-          //         SlidingPageTransitionRL(
-          //           page: const SaleOrderHistoryPage(),
-          //         ));
-          //   },
-          //   icon: Icon(
-          //     Icons.history,
-          //     color: Colors.white,
-          //   ),
-          // ),
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                  context,
+                  SlidingPageTransitionRL(
+                    page: const SaleOrderHistoryPage(),
+                  ));
+            },
+            icon: Icon(
+              Icons.history,
+              color: Colors.white,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 4.0),
-            child: LogoutButton(
-              backgroundColor: primaryDarkColor, // Your app's primary color
-            ),
+            child: LogoutButton(),
           ),
           // IconButton(
           //   onPressed: () {
@@ -1041,129 +1036,136 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: primaryColor,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               minimumSize: const Size(0, 40),
                               shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(kBorderRadius),
+                                borderRadius: BorderRadius.circular(kBorderRadius),
                               ),
                             ),
-                            onPressed: () async {
-                              final selected = widget.availableProducts
-                                  .where((product) =>
-                                      selectedProducts[product.id] == true)
-                                  .toList();
+                            onPressed: _isLoading
+                                ? null // Disable button while loading
+                                : () async {
+                              setState(() {
+                                _isLoading = true; // Start loading
+                              });
 
-                              if (selected.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text(
-                                        'Please select at least one product!'),
-                                    backgroundColor: Colors.grey,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(kBorderRadius),
+                              try {
+                                final selected = widget.availableProducts
+                                    .where((product) => selectedProducts[product.id] == true)
+                                    .toList();
+
+                                if (selected.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: const Text('Please select at least one product!'),
+                                      backgroundColor: Colors.grey,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(kBorderRadius),
+                                      ),
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: const EdgeInsets.all(16),
                                     ),
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: const EdgeInsets.all(16),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              final orderId =
-                                  await orderPickingProvider.generateOrderId();
-                              double total = 0;
-                              List<Product> finalProducts = [];
-                              Map<String, int> updatedQuantities =
-                                  Map.from(quantities);
-                              Map<String, List<Map<String, dynamic>>>
-                                  productAttributes = {};
-
-                              for (var product in selected) {
-                                final baseQuantity =
-                                    quantities[product.id] ?? 0;
-                                if (product.attributes != null &&
-                                    product.attributes!.isNotEmpty) {
-                                  final combinations =
-                                      await _showAttributeSelectionDialog(
-                                          context, product);
-                                  if (combinations != null &&
-                                      combinations.isNotEmpty) {
-                                    productAttributes[product.id] =
-                                        combinations;
-                                    final totalAttributeQuantity =
-                                        combinations.fold<int>(
-                                            0,
-                                            (sum, comb) =>
-                                                sum +
-                                                (comb['quantity'] as int));
-                                    updatedQuantities[product.id] =
-                                        totalAttributeQuantity;
-
-                                    double productTotal = 0;
-                                    for (var combo in combinations) {
-                                      final qty = combo['quantity'] as int;
-                                      final attrs = combo['attributes']
-                                          as Map<String, String>;
-                                      double extraCost = 0;
-                                      for (var attr in product.attributes!) {
-                                        final value = attrs[attr.name];
-                                        if (value != null &&
-                                            attr.extraCost != null) {
-                                          extraCost +=
-                                              attr.extraCost![value] ?? 0;
-                                        }
-                                      }
-                                      productTotal +=
-                                          (product.price + extraCost) * qty;
-                                    }
-                                    total += productTotal;
-                                    finalProducts.add(product);
-                                    widget.onAddProduct(
-                                        product, totalAttributeQuantity);
-                                  }
-                                } else if (baseQuantity > 0) {
-                                  total += product.price * baseQuantity;
-                                  finalProducts.add(product);
-                                  widget.onAddProduct(product, baseQuantity);
+                                  );
+                                  return;
                                 }
-                              }
 
-                              if (finalProducts.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'No valid products selected with quantities!'),
-                                    backgroundColor: Colors.red,
-                                    behavior: SnackBarBehavior.floating,
-                                    margin: EdgeInsets.all(16),
+                                final orderId = await orderPickingProvider.generateOrderId();
+                                double total = 0;
+                                List<Product> finalProducts = [];
+                                Map<String, int> updatedQuantities = Map.from(quantities);
+                                Map<String, List<Map<String, dynamic>>> productAttributes = {};
+
+                                for (var product in selected) {
+                                  final baseQuantity = quantities[product.id] ?? 0;
+                                  if (product.attributes != null && product.attributes!.isNotEmpty) {
+                                    final combinations =
+                                    await _showAttributeSelectionDialog(context, product);
+                                    if (combinations != null && combinations.isNotEmpty) {
+                                      productAttributes[product.id] = combinations;
+                                      final totalAttributeQuantity = combinations.fold<int>(
+                                          0, (sum, comb) => sum + (comb['quantity'] as int));
+                                      updatedQuantities[product.id] = totalAttributeQuantity;
+
+                                      double productTotal = 0;
+                                      for (var combo in combinations) {
+                                        final qty = combo['quantity'] as int;
+                                        final attrs = combo['attributes'] as Map<String, String>;
+                                        double extraCost = 0;
+                                        for (var attr in product.attributes!) {
+                                          final value = attrs[attr.name];
+                                          if (value != null && attr.extraCost != null) {
+                                            extraCost += attr.extraCost![value] ?? 0;
+                                          }
+                                        }
+                                        productTotal += (product.price + extraCost) * qty;
+                                      }
+                                      total += productTotal;
+                                      finalProducts.add(product);
+                                      widget.onAddProduct(product, totalAttributeQuantity);
+                                    }
+                                  } else if (baseQuantity > 0) {
+                                    total += product.price * baseQuantity;
+                                    finalProducts.add(product);
+                                    widget.onAddProduct(product, baseQuantity);
+                                  }
+                                }
+
+                                if (finalProducts.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('No valid products selected with quantities!'),
+                                      backgroundColor: Colors.red,
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: EdgeInsets.all(16),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                Navigator.push(
+                                  context,
+                                  SlidingPageTransitionRL(
+                                    page: SaleOrderPage(
+                                      selectedProducts: finalProducts,
+                                      quantities: updatedQuantities,
+                                      totalAmount: total,
+                                      orderId: orderId,
+                                      onClearSelections: clearSelections,
+                                      productAttributes: productAttributes,
+                                    ),
                                   ),
                                 );
-                                return;
+                              } finally {
+                                setState(() {
+                                  _isLoading = false; // Stop loading
+                                });
                               }
-
-                              Navigator.push(
-                                context,
-                                SlidingPageTransitionRL(
-                                  page: SaleOrderPage(
-                                    selectedProducts: finalProducts,
-                                    quantities: updatedQuantities,
-                                    totalAmount: total,
-                                    orderId: orderId,
-                                    onClearSelections: clearSelections,
-                                    productAttributes: productAttributes,
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text(
+                                  'Create Sale Order',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              );
-                            },
-                            child: const Text(
-                              'Create Sale Order',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
+                                Visibility(
+                                  visible: _isLoading,
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(left: 8),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:van_sale_applicatioin/provider_and_models/order_picking_provider.dart';
 import 'package:van_sale_applicatioin/provider_and_models/sales_order_provider.dart';
 import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
+import 'package:van_sale_applicatioin/secondary_pages/delivey_details_page.dart';
 import 'authentication/login.dart';
 
 final appTheme = ThemeData(
@@ -16,7 +17,9 @@ final appTheme = ThemeData(
   scaffoldBackgroundColor: Colors.grey[100],
 );
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeCameras();
   runApp(
     MultiProvider(
       providers: [
