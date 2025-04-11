@@ -11,6 +11,127 @@ import '../secondary_pages/add_products_page.dart';
 import 'sales_order_provider.dart';
 import 'dart:developer' as developer;
 
+class LogoutButton extends StatelessWidget {
+  const LogoutButton({
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Logout Button',
+      onPressed: () => _confirmLogout(context),
+      icon: Icon(
+        Icons.login_outlined,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
+          elevation: 8.0,
+          title: const Text('Confirm Logout',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          content: const Text('Are you sure you want to log out?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(context).pop(); // Close dialog
+                await LogoutService.logout(context);
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/login',
+                  (Route<dynamic> route) => false,
+                );
+              },
+              child: const Text('Logout'),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class LogoutService {
+  // Method to handle the logout functionality
+  static Future<void> logout(BuildContext context) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Clear shared preferences data
+      final prefs = await SharedPreferences.getInstance();
+
+      // Clear authentication related data
+      await prefs.remove('isLoggedIn');
+      await prefs.remove('userName');
+      await prefs.remove('userLogin');
+      await prefs.remove('userId');
+      await prefs.remove('sessionId');
+      await prefs.remove('password');
+      await prefs.remove('serverVersion');
+      await prefs.remove('userLang');
+      await prefs.remove('partnerId');
+      await prefs.remove('isSystem');
+      await prefs.remove('userTimezone');
+
+      // Optional: If you want to keep the URL and database for convenience on next login
+      // If you want to completely clear all data, uncomment these lines
+      // await prefs.remove('urldata');
+      // await prefs.remove('database');
+      // await prefs.remove('selectedDatabase');
+
+      // Close the loading dialog
+      Navigator.of(context).pop();
+
+      // Navigate to login page and remove all previous routes
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/login', // Replace with your login route name
+        (Route<dynamic> route) => false, // This removes all previous routes
+      );
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Logged out successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Close the loading dialog if there's an error
+      Navigator.of(context).pop();
+      print(e);
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging out: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
 const Color primaryColor = Color(0xFFA12424);
 final Color neutralGrey = const Color(0xFF757575);
 final Color backgroundColor = const Color(0xFFF5F5F5);
@@ -509,7 +630,7 @@ class OrderPickingProvider with ChangeNotifier {
     switch (unit) {
       case 'Pieces':
         return 1;
-        case 'Kilograms':
+      case 'Kilograms':
         return 2;
 
       default:

@@ -101,7 +101,15 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title:  Text(
+        leading: IconButton(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            icon: Icon(
+              Icons.arrow_back,
+              color: Colors.white,
+            )),
+        title: Text(
           'Sale Order History',
           style: TextStyle(
             fontWeight: FontWeight.bold,
