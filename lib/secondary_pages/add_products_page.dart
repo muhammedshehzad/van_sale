@@ -14,128 +14,7 @@ import '../provider_and_models/cyllo_session_model.dart';
 import '../provider_and_models/order_picking_provider.dart';
 import '../provider_and_models/sales_order_provider.dart';
 import '../widgets/page_transition.dart';
-import 'a.dart';
-
-class LogoutService {
-  // Method to handle the logout functionality
-  static Future<void> logout(BuildContext context) async {
-    try {
-      // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-
-      // Clear shared preferences data
-      final prefs = await SharedPreferences.getInstance();
-
-      // Clear authentication related data
-      await prefs.remove('isLoggedIn');
-      await prefs.remove('userName');
-      await prefs.remove('userLogin');
-      await prefs.remove('userId');
-      await prefs.remove('sessionId');
-      await prefs.remove('password');
-      await prefs.remove('serverVersion');
-      await prefs.remove('userLang');
-      await prefs.remove('partnerId');
-      await prefs.remove('isSystem');
-      await prefs.remove('userTimezone');
-
-      // Optional: If you want to keep the URL and database for convenience on next login
-      // If you want to completely clear all data, uncomment these lines
-      // await prefs.remove('urldata');
-      // await prefs.remove('database');
-      // await prefs.remove('selectedDatabase');
-
-      // Close the loading dialog
-      Navigator.of(context).pop();
-
-      // Navigate to login page and remove all previous routes
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/login', // Replace with your login route name
-        (Route<dynamic> route) => false, // This removes all previous routes
-      );
-
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logged out successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      // Close the loading dialog if there's an error
-      Navigator.of(context).pop();
-      print(e);
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error logging out: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-}
-
-class LogoutButton extends StatelessWidget {
-  const LogoutButton({
-    Key? key,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: 'Logout Button',
-      onPressed: () => _confirmLogout(context),
-      icon: Icon(
-        Icons.login_outlined,
-        color: Colors.white,
-      ),
-    );
-  }
-
-  void _confirmLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
-          elevation: 8.0,
-          title: const Text('Confirm Logout',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          content: const Text('Are you sure you want to log out?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop(); // Close dialog
-                await LogoutService.logout(context);
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (Route<dynamic> route) => false,
-                );
-              },
-              child: const Text('Logout'),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
+import '../widgets/a.dart';
 
 class ProductSelectionPage extends StatefulWidget {
   final List<Product> availableProducts;
@@ -156,7 +35,7 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
   TextEditingController searchController = TextEditingController();
   Map<String, bool> selectedProducts = {};
   Map<String, int> quantities = {};
-  bool _isLoading = false; // Add loading state variable
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -1036,111 +915,146 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: primaryColor,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
                               minimumSize: const Size(0, 40),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(kBorderRadius),
+                                borderRadius:
+                                    BorderRadius.circular(kBorderRadius),
                               ),
                             ),
                             onPressed: _isLoading
                                 ? null // Disable button while loading
                                 : () async {
-                              setState(() {
-                                _isLoading = true; // Start loading
-                              });
+                                    setState(() {
+                                      _isLoading = true; // Start loading
+                                    });
 
-                              try {
-                                final selected = widget.availableProducts
-                                    .where((product) => selectedProducts[product.id] == true)
-                                    .toList();
+                                    try {
+                                      final selected = widget.availableProducts
+                                          .where((product) =>
+                                              selectedProducts[product.id] ==
+                                              true)
+                                          .toList();
 
-                                if (selected.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: const Text('Please select at least one product!'),
-                                      backgroundColor: Colors.grey,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(kBorderRadius),
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                      margin: const EdgeInsets.all(16),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                final orderId = await orderPickingProvider.generateOrderId();
-                                double total = 0;
-                                List<Product> finalProducts = [];
-                                Map<String, int> updatedQuantities = Map.from(quantities);
-                                Map<String, List<Map<String, dynamic>>> productAttributes = {};
-
-                                for (var product in selected) {
-                                  final baseQuantity = quantities[product.id] ?? 0;
-                                  if (product.attributes != null && product.attributes!.isNotEmpty) {
-                                    final combinations =
-                                    await _showAttributeSelectionDialog(context, product);
-                                    if (combinations != null && combinations.isNotEmpty) {
-                                      productAttributes[product.id] = combinations;
-                                      final totalAttributeQuantity = combinations.fold<int>(
-                                          0, (sum, comb) => sum + (comb['quantity'] as int));
-                                      updatedQuantities[product.id] = totalAttributeQuantity;
-
-                                      double productTotal = 0;
-                                      for (var combo in combinations) {
-                                        final qty = combo['quantity'] as int;
-                                        final attrs = combo['attributes'] as Map<String, String>;
-                                        double extraCost = 0;
-                                        for (var attr in product.attributes!) {
-                                          final value = attrs[attr.name];
-                                          if (value != null && attr.extraCost != null) {
-                                            extraCost += attr.extraCost![value] ?? 0;
-                                          }
-                                        }
-                                        productTotal += (product.price + extraCost) * qty;
+                                      if (selected.isEmpty) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: const Text(
+                                                'Please select at least one product!'),
+                                            backgroundColor: Colors.grey,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                      kBorderRadius),
+                                            ),
+                                            behavior: SnackBarBehavior.floating,
+                                            margin: const EdgeInsets.all(16),
+                                          ),
+                                        );
+                                        return;
                                       }
-                                      total += productTotal;
-                                      finalProducts.add(product);
-                                      widget.onAddProduct(product, totalAttributeQuantity);
+
+                                      final orderId = await orderPickingProvider
+                                          .generateOrderId();
+                                      double total = 0;
+                                      List<Product> finalProducts = [];
+                                      Map<String, int> updatedQuantities =
+                                          Map.from(quantities);
+                                      Map<String, List<Map<String, dynamic>>>
+                                          productAttributes = {};
+
+                                      for (var product in selected) {
+                                        final baseQuantity =
+                                            quantities[product.id] ?? 0;
+                                        if (product.attributes != null &&
+                                            product.attributes!.isNotEmpty) {
+                                          final combinations =
+                                              await _showAttributeSelectionDialog(
+                                                  context, product);
+                                          if (combinations != null &&
+                                              combinations.isNotEmpty) {
+                                            productAttributes[product.id] =
+                                                combinations;
+                                            final totalAttributeQuantity =
+                                                combinations.fold<int>(
+                                                    0,
+                                                    (sum, comb) =>
+                                                        sum +
+                                                        (comb['quantity']
+                                                            as int));
+                                            updatedQuantities[product.id] =
+                                                totalAttributeQuantity;
+
+                                            double productTotal = 0;
+                                            for (var combo in combinations) {
+                                              final qty =
+                                                  combo['quantity'] as int;
+                                              final attrs = combo['attributes']
+                                                  as Map<String, String>;
+                                              double extraCost = 0;
+                                              for (var attr
+                                                  in product.attributes!) {
+                                                final value = attrs[attr.name];
+                                                if (value != null &&
+                                                    attr.extraCost != null) {
+                                                  extraCost +=
+                                                      attr.extraCost![value] ??
+                                                          0;
+                                                }
+                                              }
+                                              productTotal +=
+                                                  (product.price + extraCost) *
+                                                      qty;
+                                            }
+                                            total += productTotal;
+                                            finalProducts.add(product);
+                                            widget.onAddProduct(product,
+                                                totalAttributeQuantity);
+                                          }
+                                        } else if (baseQuantity > 0) {
+                                          total += product.price * baseQuantity;
+                                          finalProducts.add(product);
+                                          widget.onAddProduct(
+                                              product, baseQuantity);
+                                        }
+                                      }
+
+                                      if (finalProducts.isEmpty) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'No valid products selected with quantities!'),
+                                            backgroundColor: Colors.red,
+                                            behavior: SnackBarBehavior.floating,
+                                            margin: EdgeInsets.all(16),
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      Navigator.push(
+                                        context,
+                                        SlidingPageTransitionRL(
+                                          page: SaleOrderPage(
+                                            selectedProducts: finalProducts,
+                                            quantities: updatedQuantities,
+                                            totalAmount: total,
+                                            orderId: orderId,
+                                            onClearSelections: clearSelections,
+                                            productAttributes:
+                                                productAttributes,
+                                          ),
+                                        ),
+                                      );
+                                    } finally {
+                                      setState(() {
+                                        _isLoading = false; // Stop loading
+                                      });
                                     }
-                                  } else if (baseQuantity > 0) {
-                                    total += product.price * baseQuantity;
-                                    finalProducts.add(product);
-                                    widget.onAddProduct(product, baseQuantity);
-                                  }
-                                }
-
-                                if (finalProducts.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('No valid products selected with quantities!'),
-                                      backgroundColor: Colors.red,
-                                      behavior: SnackBarBehavior.floating,
-                                      margin: EdgeInsets.all(16),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                Navigator.push(
-                                  context,
-                                  SlidingPageTransitionRL(
-                                    page: SaleOrderPage(
-                                      selectedProducts: finalProducts,
-                                      quantities: updatedQuantities,
-                                      totalAmount: total,
-                                      orderId: orderId,
-                                      onClearSelections: clearSelections,
-                                      productAttributes: productAttributes,
-                                    ),
-                                  ),
-                                );
-                              } finally {
-                                setState(() {
-                                  _isLoading = false; // Stop loading
-                                });
-                              }
-                            },
+                                  },
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -1160,7 +1074,9 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                                       height: 16,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
                                       ),
                                     ),
                                   ),

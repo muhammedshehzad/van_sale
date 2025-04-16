@@ -53,8 +53,10 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
     super.dispose();
   }
 
-  Future<Map<String, dynamic>> _fetchDeliveryDetails(BuildContext context) async {
-    debugPrint('Starting _fetchDeliveryDetails for pickingId: ${widget.pickingData['id']}');
+  Future<Map<String, dynamic>> _fetchDeliveryDetails(
+      BuildContext context) async {
+    debugPrint(
+        'Starting _fetchDeliveryDetails for pickingId: ${widget.pickingData['id']}');
     try {
       final client = await SessionManager.getActiveClient();
       if (client == null) {
@@ -70,8 +72,18 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         'model': 'stock.move.line',
         'method': 'search_read',
         'args': [
-          [['picking_id', '=', pickingId]],
-          ['id', 'product_id', 'quantity', 'move_id', 'product_uom_id', 'lot_id', 'lot_name'],
+          [
+            ['picking_id', '=', pickingId]
+          ],
+          [
+            'id',
+            'product_id',
+            'quantity',
+            'move_id',
+            'product_uom_id',
+            'lot_id',
+            'lot_name'
+          ],
         ],
         'kwargs': {},
       });
@@ -79,13 +91,16 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       final moveLines = List<Map<String, dynamic>>.from(moveLinesResult);
 
       // Fetch stock.move
-      final moveIds = moveLines.map((line) => (line['move_id'] as List)[0] as int).toList();
+      final moveIds =
+          moveLines.map((line) => (line['move_id'] as List)[0] as int).toList();
       debugPrint('Fetching stock.move for moveIds: $moveIds');
       final moveResult = await client.callKw({
         'model': 'stock.move',
         'method': 'search_read',
         'args': [
-          [['id', 'in', moveIds]],
+          [
+            ['id', 'in', moveIds]
+          ],
           ['id', 'product_id', 'product_uom_qty', 'price_unit', 'sale_line_id'],
         ],
         'kwargs': {},
@@ -99,13 +114,16 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         'model': 'stock.picking',
         'method': 'search_read',
         'args': [
-          [['id', '=', pickingId]],
+          [
+            ['id', '=', pickingId]
+          ],
           ['origin'],
         ],
         'kwargs': {},
       });
       final picking = pickingResult[0] as Map<String, dynamic>;
-      final saleOrderName = picking['origin'] != false ? picking['origin'] as String : null;
+      final saleOrderName =
+          picking['origin'] != false ? picking['origin'] as String : null;
 
       Map<int, double> salePriceMap = {};
       if (saleOrderName != null) {
@@ -114,7 +132,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           'model': 'sale.order',
           'method': 'search_read',
           'args': [
-            [['name', '=', saleOrderName]],
+            [
+              ['name', '=', saleOrderName]
+            ],
             ['id'],
           ],
           'kwargs': {},
@@ -127,7 +147,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
             'model': 'sale.order.line',
             'method': 'search_read',
             'args': [
-              [['order_id', '=', saleOrderId]],
+              [
+                ['order_id', '=', saleOrderId]
+              ],
               ['product_id', 'price_unit'],
             ],
             'kwargs': {},
@@ -135,7 +157,8 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           debugPrint('Sale order line result: $saleLineResult');
           salePriceMap = {
             for (var line in saleLineResult)
-              (line['product_id'] as List)[0] as int: line['price_unit'] as double
+              (line['product_id'] as List)[0] as int:
+                  line['price_unit'] as double
           };
         }
       }
@@ -146,23 +169,39 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         final move = moveMap[moveId];
         line['ordered_qty'] = move?['product_uom_qty'] as double? ?? 0.0;
         final productId = (line['product_id'] as List)[0] as int;
-        line['price_unit'] = salePriceMap[productId] ?? move?['price_unit'] as double? ?? 0.0;
+        line['price_unit'] =
+            salePriceMap[productId] ?? move?['price_unit'] as double? ?? 0.0;
       }
 
       // Fetch product.product
-      final productIds = moveLines.map((line) => (line['product_id'] as List)[0] as int).toSet().toList();
+      final productIds = moveLines
+          .map((line) => (line['product_id'] as List)[0] as int)
+          .toSet()
+          .toList();
       debugPrint('Fetching product.product for productIds: $productIds');
       final productResult = await client.callKw({
         'model': 'product.product',
         'method': 'search_read',
         'args': [
-          [['id', 'in', productIds]],
-          ['id', 'name', 'default_code', 'barcode', 'image_128', 'categ_id', 'list_price'],
+          [
+            ['id', 'in', productIds]
+          ],
+          [
+            'id',
+            'name',
+            'default_code',
+            'barcode',
+            'image_128',
+            'categ_id',
+            'list_price'
+          ],
         ],
         'kwargs': {},
       });
       debugPrint('Product result: $productResult');
-      final productMap = {for (var product in productResult) product['id'] as int: product};
+      final productMap = {
+        for (var product in productResult) product['id'] as int: product
+      };
 
       for (var line in moveLines) {
         final productId = (line['product_id'] as List)[0] as int;
@@ -171,7 +210,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           line['product_code'] = product['default_code'] ?? '';
           line['product_barcode'] = product['barcode'] ?? '';
           line['product_image'] = product['image_128'];
-          line['product_category'] = product['categ_id'] != false ? (product['categ_id'] as List)[1] as String : '';
+          line['product_category'] = product['categ_id'] != false
+              ? (product['categ_id'] as List)[1] as String
+              : '';
           if (line['price_unit'] == 0.0) {
             line['price_unit'] = product['list_price'] as double? ?? 0.0;
           }
@@ -179,13 +220,18 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       }
 
       // Fetch uom.uom
-      final uomIds = moveLines.map((line) => (line['product_uom_id'] as List)[0] as int).toSet().toList();
+      final uomIds = moveLines
+          .map((line) => (line['product_uom_id'] as List)[0] as int)
+          .toSet()
+          .toList();
       debugPrint('Fetching uom.uom for uomIds: $uomIds');
       final uomResult = await client.callKw({
         'model': 'uom.uom',
         'method': 'search_read',
         'args': [
-          [['id', 'in', uomIds]],
+          [
+            ['id', 'in', uomIds]
+          ],
           ['id', 'name', 'category_id'],
         ],
         'kwargs': {},
@@ -209,8 +255,26 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         'model': 'stock.picking',
         'method': 'search_read',
         'args': [
-          [['id', '=', pickingId]],
-          ['id', 'name', 'state', 'scheduled_date', 'date_done', 'partner_id', 'location_id', 'location_dest_id', 'origin', 'carrier_id', 'weight', 'note', 'picking_type_id', 'company_id', 'user_id'],
+          [
+            ['id', '=', pickingId]
+          ],
+          [
+            'id',
+            'name',
+            'state',
+            'scheduled_date',
+            'date_done',
+            'partner_id',
+            'location_id',
+            'location_dest_id',
+            'origin',
+            'carrier_id',
+            'weight',
+            'note',
+            'picking_type_id',
+            'company_id',
+            'user_id'
+          ],
         ],
         'kwargs': {},
       });
@@ -230,8 +294,21 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           'model': 'res.partner',
           'method': 'search_read',
           'args': [
-            [['id', '=', partnerId]],
-            ['id', 'name', 'street', 'street2', 'city', 'state_id', 'country_id', 'zip', 'phone', 'email'],
+            [
+              ['id', '=', partnerId]
+            ],
+            [
+              'id',
+              'name',
+              'street',
+              'street2',
+              'city',
+              'state_id',
+              'country_id',
+              'zip',
+              'phone',
+              'email'
+            ],
           ],
           'kwargs': {},
         });
@@ -247,26 +324,36 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         'model': 'mail.message',
         'method': 'search_read',
         'args': [
-          [['model', '=', 'stock.picking'], ['res_id', '=', pickingId]],
+          [
+            ['model', '=', 'stock.picking'],
+            ['res_id', '=', pickingId]
+          ],
           ['id', 'date', 'body', 'author_id'],
         ],
         'kwargs': {'order': 'date desc', 'limit': 10},
       });
       debugPrint('Status history result: $statusHistoryResult');
-      final statusHistory = List<Map<String, dynamic>>.from(statusHistoryResult);
+      final statusHistory =
+          List<Map<String, dynamic>>.from(statusHistoryResult);
 
       // Calculate totals
-      final totalPicked = moveLines.fold(0.0, (sum, line) => sum + (line['quantity'] as double? ?? 0.0));
-      final totalOrdered = moveLines.fold(0.0, (sum, line) => sum + (line['ordered_qty'] as double));
+      final totalPicked = moveLines.fold(
+          0.0, (sum, line) => sum + (line['quantity'] as double? ?? 0.0));
+      final totalOrdered = moveLines.fold(
+          0.0, (sum, line) => sum + (line['ordered_qty'] as double));
       final totalValue = moveLines.fold(
           0.0,
-              (sum, line) => sum + ((line['price_unit'] as double) * (line['quantity'] as double? ?? 0.0)));
+          (sum, line) =>
+              sum +
+              ((line['price_unit'] as double) *
+                  (line['quantity'] as double? ?? 0.0)));
 
       // Log final data for verification
       debugPrint('Final moveLines after updates: $moveLines');
       debugPrint('Calculated totalValue: $totalValue');
 
-      debugPrint('Data fetched successfully: moveLines: ${moveLines.length}, totalPicked: $totalPicked');
+      debugPrint(
+          'Data fetched successfully: moveLines: ${moveLines.length}, totalPicked: $totalPicked');
       return {
         'moveLines': moveLines,
         'totalPicked': totalPicked,
@@ -283,6 +370,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       debugPrint('_fetchDeliveryDetails completed');
     }
   }
+
   Future<void> _submitDelivery(BuildContext context, int pickingId) async {
     try {
       setState(() {
@@ -1012,55 +1100,82 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                         // Safely handle product_id
                         final productId = line['product_id'];
                         if (productId is! List) {
-                          debugPrint('Error: product_id is not a List, it is ${productId.runtimeType} with value $productId');
-                          return const ListTile(title: Text('Invalid product data'));
+                          debugPrint(
+                              'Error: product_id is not a List, it is ${productId.runtimeType} with value $productId');
+                          return const ListTile(
+                              title: Text('Invalid product data'));
                         }
-                        final productName = (productId as List).length > 1 ? productId[1] as String : 'Unknown Product';
-                        debugPrint('productName for line $index: $productName (type: ${productName.runtimeType})');
+                        final productName = (productId as List).length > 1
+                            ? productId[1] as String
+                            : 'Unknown Product';
+                        debugPrint(
+                            'productName for line $index: $productName (type: ${productName.runtimeType})');
 
                         // Safely handle quantity
                         final pickedQty = line['quantity'] as double? ?? 0.0;
-                        debugPrint('pickedQty for line $index: $pickedQty (type: ${pickedQty.runtimeType})');
+                        debugPrint(
+                            'pickedQty for line $index: $pickedQty (type: ${pickedQty.runtimeType})');
 
                         // Safely handle ordered_qty
-                        final orderedQty = line['ordered_qty'] as double? ?? 0.0;
-                        debugPrint('orderedQty for line $index: $orderedQty (type: ${orderedQty.runtimeType})');
+                        final orderedQty =
+                            line['ordered_qty'] as double? ?? 0.0;
+                        debugPrint(
+                            'orderedQty for line $index: $orderedQty (type: ${orderedQty.runtimeType})');
 
                         // Safely handle product_code
-                        final productCode = line['product_code'] is String ? line['product_code'] as String : '';
-                        debugPrint('productCode for line $index: $productCode (type: ${productCode.runtimeType})');
+                        final productCode = line['product_code'] is String
+                            ? line['product_code'] as String
+                            : '';
+                        debugPrint(
+                            'productCode for line $index: $productCode (type: ${productCode.runtimeType})');
 
                         // Safely handle product_barcode
-                        final productBarcode = line['product_barcode'] is String ? line['product_barcode'] as String : '';
-                        debugPrint('productBarcode for line $index: $productBarcode (type: ${productBarcode.runtimeType})');
+                        final productBarcode = line['product_barcode'] is String
+                            ? line['product_barcode'] as String
+                            : '';
+                        debugPrint(
+                            'productBarcode for line $index: $productBarcode (type: ${productBarcode.runtimeType})');
 
                         // Safely handle uom_name
-                        final uomName = line['uom_name'] is String ? line['uom_name'] as String : 'Units';
-                        debugPrint('uomName for line $index: $uomName (type: ${uomName.runtimeType})');
+                        final uomName = line['uom_name'] is String
+                            ? line['uom_name'] as String
+                            : 'Units';
+                        debugPrint(
+                            'uomName for line $index: $uomName (type: ${uomName.runtimeType})');
 
                         // Safely handle price_unit
                         final priceUnit = line['price_unit'] as double? ?? 0.0;
-                        debugPrint('priceUnit for line $index: $priceUnit (type: ${priceUnit.runtimeType})');
+                        debugPrint(
+                            'priceUnit for line $index: $priceUnit (type: ${priceUnit.runtimeType})');
 
                         // Safely handle lot_name
-                        final lotName = line['lot_name'] != false && line['lot_name'] is String ? line['lot_name'] as String : null;
-                        debugPrint('lotName for line $index: $lotName (type: ${lotName?.runtimeType ?? 'null'})');
+                        final lotName = line['lot_name'] != false &&
+                                line['lot_name'] is String
+                            ? line['lot_name'] as String
+                            : null;
+                        debugPrint(
+                            'lotName for line $index: $lotName (type: ${lotName?.runtimeType ?? 'null'})');
 
                         // Safely handle product_image
                         final productImage = line['product_image'];
                         Widget imageWidget;
-                        if (productImage != null && productImage != false && productImage is String) {
+                        if (productImage != null &&
+                            productImage != false &&
+                            productImage is String) {
                           try {
                             imageWidget = Image.memory(
                               base64Decode(productImage as String),
                               fit: BoxFit.cover,
                             );
                           } catch (e) {
-                            debugPrint('Error decoding productImage for line $index: $e');
-                            imageWidget = Icon(Icons.inventory_2, color: Colors.grey[400], size: 30);
+                            debugPrint(
+                                'Error decoding productImage for line $index: $e');
+                            imageWidget = Icon(Icons.inventory_2,
+                                color: Colors.grey[400], size: 30);
                           }
                         } else {
-                          imageWidget = Icon(Icons.inventory_2, color: Colors.grey[400], size: 30);
+                          imageWidget = Icon(Icons.inventory_2,
+                              color: Colors.grey[400], size: 30);
                         }
 
                         final lineValue = priceUnit * pickedQty;
@@ -1068,7 +1183,8 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
 
                         return Card(
                           elevation: 1,
-                          margin: const EdgeInsets.only(bottom: 12), // Fix typo: should be 'bottom'
+                          margin: const EdgeInsets.only(bottom: 12),
+                          // Fix typo: should be 'bottom'
                           child: Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Column(
@@ -1089,7 +1205,8 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             productName,
@@ -1101,17 +1218,23 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                           if (productCode.isNotEmpty)
                                             Text(
                                               'SKU: $productCode',
-                                              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                                              style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                  fontSize: 13),
                                             ),
                                           if (productBarcode.isNotEmpty)
                                             Text(
                                               'Barcode: $productBarcode',
-                                              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                                              style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                  fontSize: 13),
                                             ),
                                           if (lotName != null)
                                             Text(
                                               'Lot: $lotName',
-                                              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                                              style: TextStyle(
+                                                  color: Colors.grey[700],
+                                                  fontSize: 13),
                                             ),
                                         ],
                                       ),
@@ -1120,36 +1243,46 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                 ),
                                 const Divider(height: 24),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             'Ordered',
-                                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                            style: TextStyle(
+                                                color: Colors.grey[600],
+                                                fontSize: 12),
                                           ),
                                           Text(
                                             '${orderedQty.toStringAsFixed(2)} $uomName',
-                                            style: const TextStyle(fontWeight: FontWeight.bold),
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold),
                                           ),
                                         ],
                                       ),
                                     ),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             'Picked',
-                                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                            style: TextStyle(
+                                                color: Colors.grey[600],
+                                                fontSize: 12),
                                           ),
                                           Text(
                                             '${pickedQty.toStringAsFixed(2)} $uomName',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              color: pickedQty >= orderedQty ? Colors.green : Colors.orange,
+                                              color: pickedQty >= orderedQty
+                                                  ? Colors.green
+                                                  : Colors.orange,
                                             ),
                                           ),
                                         ],
@@ -1157,11 +1290,14 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                     ),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
                                         children: [
                                           Text(
                                             'Value',
-                                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                            style: TextStyle(
+                                                color: Colors.grey[600],
+                                                fontSize: 12),
                                           ),
                                           Text(
                                             '\$${lineValue.toStringAsFixed(2)}',
@@ -1177,9 +1313,13 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                 ),
                                 const SizedBox(height: 8),
                                 LinearProgressIndicator(
-                                  value: orderedQty > 0 ? (pickedQty / orderedQty).clamp(0.0, 1.0) : 0.0,
+                                  value: orderedQty > 0
+                                      ? (pickedQty / orderedQty).clamp(0.0, 1.0)
+                                      : 0.0,
                                   backgroundColor: Colors.grey[200],
-                                  color: pickedQty >= orderedQty ? Colors.green : Colors.orange,
+                                  color: pickedQty >= orderedQty
+                                      ? Colors.green
+                                      : Colors.orange,
                                   minHeight: 5,
                                 ),
                                 const SizedBox(height: 8),
@@ -1187,7 +1327,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                   '${orderedQty > 0 ? ((pickedQty / orderedQty) * 100).toStringAsFixed(0) : 0}% complete',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: pickedQty >= orderedQty ? Colors.green : Colors.grey[600],
+                                    color: pickedQty >= orderedQty
+                                        ? Colors.green
+                                        : Colors.grey[600],
                                   ),
                                 ),
                               ],
