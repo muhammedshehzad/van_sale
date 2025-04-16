@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
+import 'package:van_sale_applicatioin/secondary_pages/payment_page.dart';
 import 'package:van_sale_applicatioin/widgets/page_transition.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -634,22 +635,9 @@ class InvoiceDetailsPage extends StatelessWidget {
         backgroundColor: const Color(0xFFA12424),
         actions: [
           IconButton(
-            icon: const Icon(Icons.share, color: Colors.white),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Share functionality to be implemented')),
-              );
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.print, color: Colors.white),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Print functionality to be implemented')),
-              );
-            },
+            onPressed: () => _downloadPDF(context),
+            tooltip: 'Print PDF',
           ),
         ],
       ),
@@ -1056,9 +1044,7 @@ class InvoiceDetailsPage extends StatelessWidget {
                       icon: const Icon(Icons.payment, color: Colors.white),
                       label: const Text('Record Payment'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isFullyPaid
-                            ? Colors.grey[400]
-                            : const Color(0xFFA12424),
+                        backgroundColor: isFullyPaid ? Colors.grey[400] : const Color(0xFFA12424),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -1067,7 +1053,19 @@ class InvoiceDetailsPage extends StatelessWidget {
                       ),
                       onPressed: isFullyPaid
                           ? null
-                          : () => _showPaymentDialog(context),
+                          : () {
+                        debugPrint('Record Payment button pressed');
+                        debugPrint('isFullyPaid: $isFullyPaid');
+                        debugPrint('invoiceData: $invoiceData');
+                        try {
+                          Navigator.push(
+                            context,SlidingPageTransitionRL(page: PaymentPage(invoiceData: invoiceData),)
+                          );
+                          debugPrint('Navigated to PaymentPage');
+                        } catch (e) {
+                          debugPrint('Navigation error: $e');
+                        }
+                      },
                     ),
                   ),
                 ],

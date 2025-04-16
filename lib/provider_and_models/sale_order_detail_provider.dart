@@ -211,7 +211,6 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       }
 
       // Fetch invoices
-// Fetch invoices
       if (order['invoice_ids'] != null &&
           order['invoice_ids'] is List &&
           order['invoice_ids'].isNotEmpty) {
@@ -339,11 +338,106 @@ class SaleOrderDetailProvider extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  Future<void> recordPayment({
+    required int invoiceId,
+    required double amount,
+    required String paymentMethod,
+    required DateTime paymentDate,
+  }) async {
+    final client = await SessionManager.getActiveClient();
+    if (client == null) {
+      throw Exception('No active Odoo session found. Please log in again.');
+    }
+
+    try {
+      // Determine journal based on payment method
+      String journalType;
+      switch (paymentMethod.toLowerCase()) {
+        case 'cash':
+          journalType = 'cash';
+          break;
+        case 'credit card':
+        case 'bank transfer':
+          journalType = 'bank';
+          break;
+        case 'check':
+          journalType = 'bank'; // Checks often use bank journals
+          break;
+        default:
+          journalType = 'cash'; // Fallback
+      }
+
+      // Fetch journals
+      final journalResult = await client.callKw({
+        'model': 'account.journal',
+        'method': 'search_read',
+        'args': [
+          [
+            ['type', '=', journalType],
+            ['company_id', '=', orderData['company_id'] is List
+                ? orderData['company_id'][0]
+                : orderData['company_id'] ?? 1],
+          ],
+          ['id', 'name'],
+        ],
+        'kwargs': {},
+      });
+
+      if (journalResult.isEmpty) {
+        throw Exception('No $journalType journal found for the company.');
+      }
+
+      final journalId = journalResult[0]['id'] as int;
+
+      // Fetch payment method (account.payment.method)
+      final paymentMethodResult = await client.callKw({
+        'model': 'account.payment.method',
+        'method': 'search_read',
+        'args': [
+          [
+            ['code', '=', paymentMethod.toLowerCase() == 'cash' ? 'manual' : 'manual'],
+            // Adjust if you have specific payment methods defined in Odoo
+          ],
+          ['id'],
+        ],
+        'kwargs': {},
+      });
+
+      final paymentMethodId = paymentMethodResult.isNotEmpty
+          ? paymentMethodResult[0]['id'] as int
+          : 1; // Fallback to manual payment method
+
+      // Create payment
+      await client.callKw({
+        'model': 'account.payment',
+        'method': 'create',
+        'args': [{
+          'invoice_ids': [(6, 0, [invoiceId])],
+          'amount': amount,
+          'payment_type': 'inbound',
+          'journal_id': journalId,
+          'payment_method_id': paymentMethodId,
+          'payment_date': DateFormat('yyyy-MM-dd').format(paymentDate),
+          'partner_id': orderData['partner_id'] is List
+              ? orderData['partner_id'][0]
+              : orderData['partner_id'] ?? false,
+        }],
+        'kwargs': {},
+      });
+
+      // Refresh order details to reflect updated payment status
+      await fetchOrderDetails();
+    } catch (e) {
+      throw Exception('Failed to record payment: $e');
+    }
+  }
+
   Future<void> confirmPicking(
-    int pickingId,
-    Map<int, double> pickedQuantities,
-    bool validateImmediately,
-  ) async {
+      int pickingId,
+      Map<int, double> pickedQuantities,
+      bool validateImmediately,
+      ) async {
     final client = await SessionManager.getActiveClient();
     if (client == null) {
       throw Exception('No active Odoo session found.');
@@ -387,8 +481,8 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       // Fetch ordered quantities from stock.move
       final moveIds = moveLines
           .map((line) => line['move_id'] is List
-              ? (line['move_id'] as List)[0] as int
-              : line['move_id'] as int)
+          ? (line['move_id'] as List)[0] as int
+          : line['move_id'] as int)
           .toList();
       final moveResult = await client.callKw({
         'model': 'stock.move',
@@ -497,7 +591,7 @@ class SaleOrderDetailProvider extends ChangeNotifier {
 
       await fetchOrderDetails();
     } catch (e) {
-      rethrow;
+      throw Exception('Failed to confirm picking: $e');
     }
   }
 
@@ -508,66 +602,70 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       throw Exception('No active Odoo session found.');
     }
 
-    // Extract product IDs from order lines
-    List<int> productIds = orderLines
-        .where((line) =>
-            line['product_id'] is List && line['product_id'].length > 1)
-        .map((line) => (line['product_id'] as List)[0] as int)
-        .toList();
+    try {
+      // Extract product IDs from order lines
+      List<int> productIds = orderLines
+          .where((line) =>
+      line['product_id'] is List && line['product_id'].length > 1)
+          .map((line) => (line['product_id'] as List)[0] as int)
+          .toList();
 
-    // Fetch all internal stock locations for the warehouse (including children)
-    final locationResult = await client.callKw({
-      'model': 'stock.location',
-      'method': 'search_read',
-      'args': [
-        [
-          ['warehouse_id', '=', warehouseId],
-          ['usage', '=', 'internal'],
+      // Fetch all internal stock locations for the warehouse (including children)
+      final locationResult = await client.callKw({
+        'model': 'stock.location',
+        'method': 'search_read',
+        'args': [
+          [
+            ['warehouse_id', '=', warehouseId],
+            ['usage', '=', 'internal'],
+          ],
+          ['id'],
         ],
-        ['id'],
-      ],
-      'kwargs': {},
-    });
+        'kwargs': {},
+      });
 
-    if (locationResult.isEmpty) {
-      return Map.fromEntries(productIds.map((id) => MapEntry(id, 0.0)));
-    }
-    final locationIds = locationResult.map((loc) => loc['id'] as int).toList();
+      if (locationResult.isEmpty) {
+        return Map.fromEntries(productIds.map((id) => MapEntry(id, 0.0)));
+      }
+      final locationIds = locationResult.map((loc) => loc['id'] as int).toList();
 
-    // Fetch stock quantities for products in all internal locations
-    final stockResult = await client.callKw({
-      'model': 'stock.quant',
-      'method': 'search_read',
-      'args': [
-        [
-          ['product_id', 'in', productIds],
-          ['location_id', 'in', locationIds], // Check all internal locations
+      // Fetch stock quantities for products in all internal locations
+      final stockResult = await client.callKw({
+        'model': 'stock.quant',
+        'method': 'search_read',
+        'args': [
+          [
+            ['product_id', 'in', productIds],
+            ['location_id', 'in', locationIds], // Check all internal locations
+          ],
+          ['product_id', 'quantity', 'reserved_quantity'],
         ],
-        ['product_id', 'quantity', 'reserved_quantity'],
-      ],
-      'kwargs': {},
-    });
+        'kwargs': {},
+      });
 
-    // Aggregate stock availability across all records
-    Map<int, double> stockAvailability = {};
-    for (var stock in stockResult) {
-      final productId = (stock['product_id'] as List)[0] as int;
-      final quantity = (stock['quantity'] as num?)?.toDouble() ?? 0.0;
-      final reserved = (stock['reserved_quantity'] as num?)?.toDouble() ?? 0.0;
-      stockAvailability[productId] =
-          (stockAvailability[productId] ?? 0.0) + (quantity - reserved);
+      // Aggregate stock availability across all records
+      Map<int, double> stockAvailability = {};
+      for (var stock in stockResult) {
+        final productId = (stock['product_id'] as List)[0] as int;
+        final quantity = (stock['quantity'] as num?)?.toDouble() ?? 0.0;
+        final reserved = (stock['reserved_quantity'] as num?)?.toDouble() ?? 0.0;
+        stockAvailability[productId] =
+            (stockAvailability[productId] ?? 0.0) + (quantity - reserved);
+      }
+
+      // Ensure all product IDs have an entry, defaulting to 0 if not found
+      for (var line in orderLines) {
+        final productId = (line['product_id'] as List)[0] as int;
+        stockAvailability.putIfAbsent(productId, () => 0.0);
+      }
+
+      // Ensure non-negative stock values
+      stockAvailability.updateAll((key, value) => value < 0 ? 0.0 : value);
+
+      return stockAvailability;
+    } catch (e) {
+      throw Exception('Failed to fetch stock availability: $e');
     }
-
-    // Ensure all product IDs have an entry, defaulting to 0 if not found
-    for (var line in orderLines) {
-      final productId = (line['product_id'] as List)[0] as int;
-      stockAvailability.putIfAbsent(productId, () => 0.0);
-    }
-
-    // Ensure non-negative stock values
-    stockAvailability.updateAll((key, value) => value < 0 ? 0.0 : value);
-
-    return stockAvailability;
   }
 
   String formatStateMessage(String state) {
@@ -597,7 +695,7 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       case 'draft':
         statusMessage = 'Draft Quotation';
         detailedMessage =
-            'This quotation has not been sent to the customer yet.';
+        'This quotation has not been sent to the customer yet.';
         break;
       case 'sent':
         statusMessage = 'Quotation Sent';
@@ -607,7 +705,7 @@ class SaleOrderDetailProvider extends ChangeNotifier {
         statusMessage = 'Sales Order Confirmed';
         if (invoiceStatus == 'to invoice') {
           detailedMessage =
-              'The sales order is confirmed but waiting to be invoiced.';
+          'The sales order is confirmed but waiting to be invoiced.';
           showWarning = true;
         } else if (invoiceStatus == 'invoiced') {
           detailedMessage = 'The sales order is confirmed and fully invoiced.';
