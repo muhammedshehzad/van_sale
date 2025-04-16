@@ -50,7 +50,7 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 500),
       vsync: this,
     )..repeat(reverse: true);
     _fade = Tween<double>(begin: 0.3, end: 1.0).animate(

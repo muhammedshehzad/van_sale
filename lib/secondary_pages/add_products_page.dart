@@ -370,19 +370,19 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
             padding: const EdgeInsets.only(right: 4.0),
             child: LogoutButton(),
           ),
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                  context,
-                  SlidingPageTransitionRL(
-                    page: DriverHomePage(),
-                  ));
-            },
-            icon: Icon(
-              Icons.scale,
-              color: Colors.white,
-            ),
-          ),
+          // IconButton(
+          //   onPressed: () {
+          //     Navigator.push(
+          //         context,
+          //         SlidingPageTransitionRL(
+          //           page: DriverHomePage(),
+          //         ));
+          //   },
+          //   icon: Icon(
+          //     Icons.scale,
+          //     color: Colors.white,
+          //   ),
+          // ),
         ],
         backgroundColor: primaryColor,
         elevation: 0,

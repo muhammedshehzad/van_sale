@@ -211,6 +211,7 @@ class SaleOrderDetailProvider extends ChangeNotifier {
       }
 
       // Fetch invoices
+// Fetch invoices
       if (order['invoice_ids'] != null &&
           order['invoice_ids'] is List &&
           order['invoice_ids'].isNotEmpty) {
@@ -221,10 +222,13 @@ class SaleOrderDetailProvider extends ChangeNotifier {
           'invoice_date_due',
           'amount_total',
           'amount_residual',
+          'amount_untaxed',
+          'amount_tax',
           'state',
           'invoice_payment_state',
           'type',
-          'ref'
+          'ref',
+          'invoice_line_ids',
         ]);
         final invoices = await client.callKw({
           'model': 'account.move',
@@ -237,11 +241,96 @@ class SaleOrderDetailProvider extends ChangeNotifier {
           ],
           'kwargs': {},
         });
+
+        // Fetch invoice lines for each invoice
+        for (var invoice in invoices) {
+          if (invoice['invoice_line_ids'] != null &&
+              invoice['invoice_line_ids'] is List &&
+              invoice['invoice_line_ids'].isNotEmpty) {
+            final invoiceLineFields = await getValidFields('account.move.line', [
+              'name',
+              'product_id',
+              'quantity',
+              'price_unit',
+              'price_subtotal',
+              'price_total',
+              'tax_ids',
+              'discount',
+            ]);
+            final invoiceLines = await client.callKw({
+              'model': 'account.move.line',
+              'method': 'search_read',
+              'args': [
+                [
+                  ['id', 'in', invoice['invoice_line_ids']]
+                ],
+                invoiceLineFields,
+              ],
+              'kwargs': {
+                'context': {
+                  'lang': 'en_US', // Ensure names are fetched in desired language
+                },
+              },
+            });
+
+            // Resolve product_id and tax_ids names
+            for (var line in invoiceLines) {
+              // Fetch product_id name
+              if (line['product_id'] is int && line['product_id'] != false) {
+                final productResult = await client.callKw({
+                  'model': 'product.product',
+                  'method': 'search_read',
+                  'args': [
+                    [
+                      ['id', '=', line['product_id']]
+                    ],
+                    ['name'],
+                  ],
+                  'kwargs': {},
+                });
+                line['product_id'] = productResult.isNotEmpty
+                    ? [line['product_id'], productResult[0]['name'] as String]
+                    : [line['product_id'], ''];
+              } else if (line['product_id'] == false) {
+                line['product_id'] = false;
+              }
+
+              // Fetch tax_ids names
+              if (line['tax_ids'] is List && line['tax_ids'].isNotEmpty) {
+                final taxResult = await client.callKw({
+                  'model': 'account.tax',
+                  'method': 'search_read',
+                  'args': [
+                    [
+                      ['id', 'in', line['tax_ids']]
+                    ],
+                    ['name'],
+                  ],
+                  'kwargs': {},
+                });
+                line['tax_ids'] = List.from(line['tax_ids']).asMap().entries.map((entry) {
+                  final taxId = entry.value;
+                  final tax = taxResult.firstWhere(
+                        (t) => t['id'] == taxId,
+                    orElse: () => {'name': ''},
+                  );
+                  return [taxId, tax['name'] as String];
+                }).toList();
+              } else {
+                line['tax_ids'] = [];
+              }
+            }
+
+            invoice['invoice_line_ids'] = invoiceLines;
+          } else {
+            invoice['invoice_line_ids'] = [];
+          }
+        }
+
         order['invoice_details'] = invoices;
       } else {
         order['invoice_details'] = [];
       }
-
       _orderDetails = Map<String, dynamic>.from(order);
       _isLoading = false;
     } catch (e) {
@@ -250,7 +339,6 @@ class SaleOrderDetailProvider extends ChangeNotifier {
     }
     notifyListeners();
   }
-
   Future<void> confirmPicking(
     int pickingId,
     Map<int, double> pickedQuantities,

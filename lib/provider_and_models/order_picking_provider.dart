@@ -45,7 +45,7 @@ class LogoutButton extends StatelessWidget {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
+            TextButton(
               onPressed: () async {
                 Navigator.of(context).pop(); // Close dialog
                 await LogoutService.logout(context);
@@ -56,8 +56,7 @@ class LogoutButton extends StatelessWidget {
                 );
               },
               child: const Text('Logout'),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+
             ),
           ],
         );
