@@ -2,8 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_barcode_scanner/flutter_barcode_scanner.dart';
 
-import '../provider_and_models/cyllo_session_model.dart';
-import '../provider_and_models/sale_order_detail_provider.dart';
+import '../../../../authentication/cyllo_session_model.dart';
+import '../sale_order_detail_provider.dart';
 
 class PickingPage extends StatefulWidget {
   final Map<String, dynamic> picking;

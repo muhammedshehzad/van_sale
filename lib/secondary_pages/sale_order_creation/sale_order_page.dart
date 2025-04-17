@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:provider/provider.dart';
-import '../provider_and_models/cyllo_session_model.dart';
-import '../provider_and_models/order_picking_provider.dart';
-import '../provider_and_models/sales_order_provider.dart';
+import '../../authentication/cyllo_session_model.dart';
+import '../../main_pages/select_products_page/order_picking_provider.dart';
+import 'sales_order_provider.dart';
 
 class SaleOrderPage extends StatefulWidget {
   final List<Product> selectedProducts;

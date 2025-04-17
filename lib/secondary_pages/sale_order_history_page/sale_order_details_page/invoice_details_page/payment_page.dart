@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart'; // Adjust based on your actual provider path
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/sale_order_detail_provider.dart'; // Adjust based on your actual provider path
 
 class PaymentPage extends StatefulWidget {
   final Map<String, dynamic> invoiceData;

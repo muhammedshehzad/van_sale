@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:van_sale_applicatioin/provider_and_models/cyllo_session_model.dart';
+import 'package:van_sale_applicatioin/authentication/cyllo_session_model.dart';
 
 class Invoice {
   final int id;

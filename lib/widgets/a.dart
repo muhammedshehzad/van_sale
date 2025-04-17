@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../provider_and_models/order_picking_provider.dart';
+import '../main_pages/select_products_page/order_picking_provider.dart';
 import 'page_transition.dart';
 
 final ThemeData appTheme = ThemeData(

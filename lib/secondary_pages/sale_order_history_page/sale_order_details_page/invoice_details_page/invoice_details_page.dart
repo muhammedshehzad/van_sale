@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
-import 'package:van_sale_applicatioin/secondary_pages/payment_page.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/sale_order_detail_provider.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/invoice_details_page/payment_page.dart';
 import 'package:van_sale_applicatioin/widgets/page_transition.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';

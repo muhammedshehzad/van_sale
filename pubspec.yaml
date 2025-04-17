@@ -52,6 +52,8 @@ dependencies:
   mobile_scanner: ^6.0.7
   permission_handler: ^11.3.1  # Already added, ensure latest version
   camera: ^0.11.1
+  flutter_barcode_scanner: ^2.0.0
+  vibration: ^3.1.3
 
 dev_dependencies:
   flutter_test:

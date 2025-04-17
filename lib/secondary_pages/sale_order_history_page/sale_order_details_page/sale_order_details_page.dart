@@ -3,14 +3,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:van_sale_applicatioin/provider_and_models/cyllo_session_model.dart';
-import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
-import 'package:van_sale_applicatioin/secondary_pages/products_picking_page.dart';
+import 'package:van_sale_applicatioin/authentication/cyllo_session_model.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/products_picking_page/products_picking_page.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/sale_order_detail_provider.dart';
 import 'package:van_sale_applicatioin/widgets/page_transition.dart';
-import 'package:flutter_barcode_scanner/flutter_barcode_scanner.dart';
-import '../provider_and_models/order_picking_provider.dart';
-import 'delivey_details_page.dart';
-import 'invoice_details_page.dart';
+import '../../../main_pages/select_products_page/order_picking_provider.dart';
+import 'delivery_details_page/delivey_details_page.dart';
+import 'invoice_details_page/invoice_details_page.dart';
 
 class SaleOrderDetailPage extends StatefulWidget {
   final Map<String, dynamic> orderData;

@@ -3,12 +3,12 @@ import 'package:intl/intl.dart';
 import 'dart:developer';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../widgets/order_picking_page.dart';
-import '../widgets/customer_dialog.dart';
-import '../widgets/page_transition.dart';
-import 'cyllo_session_model.dart';
-import '../secondary_pages/add_products_page.dart';
-import 'sales_order_provider.dart';
+import '../../widgets/modelmodelleldede.dart';
+import '../../widgets/customer_dialog.dart';
+import '../../widgets/page_transition.dart';
+import '../../authentication/cyllo_session_model.dart';
+import 'products_selection_page.dart';
+import '../../secondary_pages/sale_order_creation/sales_order_provider.dart';
 import 'dart:developer' as developer;
 
 class LogoutButton extends StatelessWidget {
