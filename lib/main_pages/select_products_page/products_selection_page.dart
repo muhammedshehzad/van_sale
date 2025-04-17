@@ -2,19 +2,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:van_sale_applicatioin/authentication/login.dart';
-import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page.dart';
-import 'package:van_sale_applicatioin/secondary_pages/sale_order_page.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_creation/sale_order_page.dart';
 import 'dart:convert';
 import 'dart:developer';
-
-import '../main_pages/order_picking_page.dart';
-import '../provider_and_models/cyllo_session_model.dart';
-import '../provider_and_models/order_picking_provider.dart';
-import '../provider_and_models/sales_order_provider.dart';
-import '../widgets/page_transition.dart';
-import '../widgets/a.dart';
+import '../../authentication/cyllo_session_model.dart';
+import '../../secondary_pages/sale_order_history_page/sale_order_history_page.dart';
+import 'order_picking_provider.dart';
+import '../../secondary_pages/sale_order_creation/sales_order_provider.dart';
+import '../../widgets/page_transition.dart';
 
 class ProductSelectionPage extends StatefulWidget {
   final List<Product> availableProducts;

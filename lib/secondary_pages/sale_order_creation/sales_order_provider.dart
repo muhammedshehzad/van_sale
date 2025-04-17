@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:animated_custom_dropdown/custom_dropdown.dart';
 import 'package:flutter/material.dart';
-import 'cyllo_session_model.dart';
+import '../../authentication/cyllo_session_model.dart';
 
 Map<String, int> _temporaryInventory = {};
 

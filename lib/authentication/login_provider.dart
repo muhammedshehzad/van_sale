@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../provider_and_models/cyllo_session_model.dart';
-import '../provider_and_models/order_picking_provider.dart';
+import 'cyllo_session_model.dart';
+import '../main_pages/select_products_page/order_picking_provider.dart';
 import '../widgets/snackbar.dart';
 
 class LoginProvider with ChangeNotifier {

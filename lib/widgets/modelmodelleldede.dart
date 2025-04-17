@@ -4,9 +4,8 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'package:provider/provider.dart';
-import '../provider_and_models/order_picking_provider.dart';
-import '../provider_and_models/sales_order_provider.dart';
-
+import '../main_pages/select_products_page/order_picking_provider.dart';
+import '../secondary_pages/sale_order_creation/sales_order_provider.dart';
 
 class OrderTakingPage extends StatefulWidget {
   const OrderTakingPage({Key? key}) : super(key: key);
@@ -654,7 +653,6 @@ class _OrderTakingPageState extends State<OrderTakingPage> {
     );
   }
 }
-
 
 class ProductItem {
   final TextEditingController nameController = TextEditingController();

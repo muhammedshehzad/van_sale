@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:van_sale_applicatioin/secondary_pages/sale_order_details_page.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/sale_order_details_page.dart';
 import 'package:van_sale_applicatioin/widgets/page_transition.dart';
-import '../provider_and_models/cyllo_session_model.dart';
-import '../provider_and_models/order_picking_provider.dart';
-import '../provider_and_models/sales_order_provider.dart';
+import '../../authentication/cyllo_session_model.dart';
+import '../../main_pages/select_products_page/order_picking_provider.dart';
+import '../../secondary_pages/sale_order_creation/sales_order_provider.dart';
 
 
 
@@ -83,25 +83,28 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
         _filteredOrders = List.from(_allOrders);
       } else {
         _filteredOrders = _allOrders.where((order) {
-          final orderId = (order['name'] as String).toLowerCase();
-          final customer = order['partner_id'] is List
-              ? (order['partner_id'] as List)[1].toString().toLowerCase()
-              : 'unknown';
-          final state = (order['state'] as String).toLowerCase();
-          final deliveryStatus =
-          (order['delivery_status'] as String? ?? 'unknown').toLowerCase();
-          final invoiceStatus =
-          (order['invoice_status'] as String? ?? 'unknown').toLowerCase();
-          return orderId.contains(query) ||
-              customer.contains(query) ||
-              state.contains(query) ||
-              deliveryStatus.contains(query) ||
-              invoiceStatus.contains(query);
+          try {
+            final orderId = (order['name'] as String?)?.toLowerCase() ?? '';
+            final customer = order['partner_id'] is List
+                ? (order['partner_id'] as List)[1]?.toString().toLowerCase() ?? 'unknown'
+                : 'unknown';
+            final state = (order['state'] as String?)?.toLowerCase() ?? '';
+            final deliveryStatus = (order['delivery_status'] as String?)?.toLowerCase() ?? '';
+            final invoiceStatus = (order['invoice_status'] as String?)?.toLowerCase() ?? '';
+
+            return orderId.contains(query) ||
+                customer.contains(query) ||
+                state.contains(query) ||
+                deliveryStatus.contains(query) ||
+                invoiceStatus.contains(query);
+          } catch (e) {
+            print('Error filtering order: $order, Error: $e');
+            return false;
+          }
         }).toList();
       }
     });
   }
-
   void _navigateToOrderDetail(
       BuildContext context, Map<String, dynamic> order) {
     Navigator.push(
@@ -157,7 +160,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(kBorderRadius),
-                    borderSide: const BorderSide(color: Color(0xFF1976D2)),
+                    borderSide: const BorderSide(color: Color(0xFFA12424)),
                   ),
                   filled: true,
                   fillColor: Colors.grey[100],
@@ -171,7 +174,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                         child:
-                        CircularProgressIndicator(color: Color(0xFF1976D2)),
+                        CircularProgressIndicator(color: Color(0xFFA12424)),
                       );
                     }
                     if (snapshot.hasError) {
