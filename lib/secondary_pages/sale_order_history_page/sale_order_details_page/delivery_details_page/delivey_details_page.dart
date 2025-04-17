@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:van_sale_applicatioin/provider_and_models/order_picking_provider.dart';
 import 'package:van_sale_applicatioin/provider_and_models/sale_order_detail_provider.dart';
@@ -499,83 +500,96 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         }
       }
 
-      // Update quantities in stock.move.line (using standard fields)
-      print('Fetching move lines...');
-      final moveLines = await client.callKw({
-        'model': 'stock.move.line',
+      // Fetch stock.move records for the picking
+      print('Fetching stock.move records...');
+      final moveRecords = await client.callKw({
+        'model': 'stock.move',
         'method': 'search_read',
         'args': [
           [
             ['picking_id', '=', pickingId]
           ],
-          ['id', 'qty_done', 'product_id', 'state'], // Minimal standard fields
+          ['id', 'done_quantity', 'product_qty', 'product_id'],
         ],
         'kwargs': {},
       });
-      print('Move lines fetched: $moveLines');
+      print('Stock.move records fetched: $moveRecords');
 
-      // Fetch stock.move to get demanded quantities
-      final moveIds = moveLines
-          .map((line) => line['move_id'] is List ? line['move_id'][0] : null)
-          .where((id) => id != null)
-          .toList();
-      final stockMoves = moveIds.isNotEmpty
-          ? await client.callKw({
-              'model': 'stock.move',
-              'method': 'search_read',
-              'args': [
-                [
-                  ['id', 'in', moveIds]
-                ],
-                ['id', 'product_uom_qty'],
-              ],
-              'kwargs': {},
-            })
-          : [];
-      final moveQtyMap = {
-        for (var move in stockMoves) move['id']: move['product_uom_qty']
-      };
-
-      for (var line in moveLines) {
-        final currentQtyDone = (line['qty_done'] as num?)?.toDouble() ?? 0.0;
-        final moveId = line['move_id'] is List ? line['move_id'][0] : null;
-        final demandedQty = moveId != null
-            ? (moveQtyMap[moveId] as num?)?.toDouble() ?? 0.0
-            : 0.0;
+      for (var move in moveRecords) {
+        final moveId = move['id'] as int;
+        final currentDoneQty =
+            (move['done_quantity'] as num?)?.toDouble() ?? 0.0;
+        final demandedQty = (move['product_qty'] as num?)?.toDouble() ?? 0.0;
         final productId =
-            line['product_id'] is List ? line['product_id'][1] : 'Unknown';
+            move['product_id'] is List ? move['product_id'][1] : 'Unknown';
         print(
-            'Line ${line['id']} ($productId): qty_done=$currentQtyDone, demanded=$demandedQty');
+            'Move $moveId ($productId): done_quantity=$currentDoneQty, demanded=$demandedQty');
 
-        if (currentQtyDone == 0.0 && demandedQty > 0.0) {
-          print('Updating qty_done for line ${line['id']} to $demandedQty');
+        if (currentDoneQty == 0.0 && demandedQty > 0.0) {
+          print('Updating done_quantity for move $moveId to $demandedQty');
           await client.callKw({
-            'model': 'stock.move.line',
+            'model': 'stock.move',
             'method': 'write',
             'args': [
-              [line['id']],
-              {'qty_done': demandedQty},
+              [moveId],
+              {'done_quantity': demandedQty},
             ],
             'kwargs': {},
           });
-          print('Updated qty_done for line ${line['id']}');
-        } else if (currentQtyDone == 0.0 && demandedQty == 0.0) {
+          print('Updated done_quantity for move $moveId');
+        } else if (currentDoneQty == 0.0 && demandedQty == 0.0) {
           throw Exception(
-              'No quantity set for line ${line['id']} ($productId). Cannot validate picking.');
+              'No quantity set for move $moveId ($productId). Cannot validate picking.');
         }
       }
 
-      // Validate the picking
-      print('Validating picking $pickingId...');
-      await client.callKw({
-        'model': 'stock.picking',
-        'method': 'button_validate',
-        'args': [
-          [pickingId]
-        ],
-        'kwargs': {},
+      // Validate the picking to set state to 'done'
+      print('Validating picking $pickingId to confirm delivery...');
+      int maxRetries = 3;
+      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          final validationResult = await client.callKw({
+            'model': 'stock.picking',
+            'method': 'button_validate',
+            'args': [
+              [pickingId]
+            ],
+            'kwargs': {},
+          });
+          print(
+              'Validation attempt $attempt succeeded, result: $validationResult');
+
+          // Check if a wizard is returned
+          if (validationResult is Map &&
+              validationResult.containsKey('res_id')) {
+            print(
+                'Validation returned a wizard, res_id: ${validationResult['res_id']}');
+            final wizardId = validationResult['res_id'] as int;
+            await client.callKw({
+              'model': 'stock.immediate.transfer',
+              'method': 'process',
+              'args': [
+                [wizardId]
+              ],
+              'kwargs': {},
+            });
+            print('Wizard processed successfully');
+            break;
+          } else {
+            print('Picking validated directly, no wizard required');
+            break;
+          }
+        } catch (e) {
+          print('Validation attempt $attempt failed: $e');
+          if (attempt == maxRetries) throw e;
+          await Future.delayed(Duration(seconds: 1)); // Wait before retrying
+        }
+      }
+
+      // Refresh the delivery details to reflect the updated state
+      setState(() {
+        _deliveryDetailsFuture = _fetchDeliveryDetails(context);
       });
-      print('Picking validated successfully');
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Delivery confirmed successfully')),
@@ -584,6 +598,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       Navigator.pop(context, true);
     } catch (e) {
       print('Submission error: $e');
+      if (e is OdooException) {
+        print('Odoo Error Details: ${e.toString()}');
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
       );
@@ -1184,7 +1201,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                         return Card(
                           elevation: 1,
                           margin: const EdgeInsets.only(bottom: 12),
-                          // Fix typo: should be 'bottom'
                           child: Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Column(

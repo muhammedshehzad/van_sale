@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../provider_and_models/login_provider.dart'; // Import the new LoginProvider
+import 'login_provider.dart'; // Import the new LoginProvider
 
 class Login extends StatelessWidget {
   const Login({super.key});

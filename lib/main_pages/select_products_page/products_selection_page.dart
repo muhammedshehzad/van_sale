@@ -9,7 +9,7 @@ import 'package:van_sale_applicatioin/secondary_pages/sale_order_page.dart';
 import 'dart:convert';
 import 'dart:developer';
 
-import '../main_pages/order_picking_page.dart';
+import '../widgets/order_picking_page.dart';
 import '../provider_and_models/cyllo_session_model.dart';
 import '../provider_and_models/order_picking_provider.dart';
 import '../provider_and_models/sales_order_provider.dart';

@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import 'dart:developer';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../main_pages/order_picking_page.dart';
+import '../widgets/order_picking_page.dart';
 import '../widgets/customer_dialog.dart';
 import '../widgets/page_transition.dart';
 import 'cyllo_session_model.dart';
