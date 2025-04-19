@@ -8,6 +8,7 @@ import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sa
 import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/sale_order_detail_provider.dart';
 import 'package:van_sale_applicatioin/widgets/page_transition.dart';
 import '../../../main_pages/select_products_page/order_picking_provider.dart';
+import '../../../widgets/order_tracking.dart';
 import 'delivery_details_page/delivey_details_page.dart';
 import 'invoice_details_page/invoice_details_page.dart';
 
@@ -92,7 +93,7 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
               child: provider.isLoading
                   ? const Center(
                       child:
-                          CircularProgressIndicator(color: Color(0xFF1976D2)),
+                          CircularProgressIndicator(color: Color(0xFFA12424)),
                     )
                   : provider.error != null
                       ? Center(
@@ -306,91 +307,89 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Status Card
+                        // Card(
+                        //   elevation: 2,
+                        //   shape: RoundedRectangleBorder(
+                        //     borderRadius: BorderRadius.circular(12),
+                        //   ),
+                        //   color: statusDetails['showWarning'] == true
+                        //       ? Colors.amber[50]
+                        //       : Colors.white,
+                        //   child: Padding(
+                        //     padding: const EdgeInsets.all(16.0),
+                        //     child: Column(
+                        //       crossAxisAlignment: CrossAxisAlignment.start,
+                        //       children: [
+                        //         Row(
+                        //           children: [
+                        //             Icon(
+                        //               statusDetails['showWarning'] == true
+                        //                   ? Icons.warning_amber_rounded
+                        //                   : Icons.check_circle_outline,
+                        //               color:
+                        //                   statusDetails['showWarning'] == true
+                        //                       ? Colors.orange[700]
+                        //                       : Colors.green[700],
+                        //               size: 24,
+                        //             ),
+                        //             const SizedBox(width: 8),
+                        //             Text(
+                        //               statusDetails['message'] as String,
+                        //               style: TextStyle(
+                        //                 fontSize: 16,
+                        //                 fontWeight: FontWeight.bold,
+                        //                 color:
+                        //                     statusDetails['showWarning'] == true
+                        //                         ? Colors.orange[800]
+                        //                         : Colors.grey[800],
+                        //               ),
+                        //             ),
+                        //           ],
+                        //         ),
+                        //         const SizedBox(height: 8),
+                        //         Text(
+                        //           statusDetails['details'] as String,
+                        //           style: TextStyle(
+                        //             fontSize: 14,
+                        //             color: Colors.grey[700],
+                        //           ),
+                        //         ),
+                        //         const SizedBox(height: 12),
+                        //         const Divider(),
+                        //         const SizedBox(height: 12),
+                        //         Row(
+                        //           mainAxisAlignment:
+                        //               MainAxisAlignment.spaceBetween,
+                        //           children: [
+                        //             Flexible(
+                        //               flex: 1,
+                        //               child: _buildStatusTag(
+                        //                 'Delivery: $deliveryStatus',
+                        //                 provider.getDeliveryStatusColor(
+                        //                     deliveryStatus),
+                        //               ),
+                        //             ),
+                        //             SizedBox(
+                        //               width: 2,
+                        //             ),
+                        //             Flexible(
+                        //               flex: 1,
+                        //               child: _buildStatusTag(
+                        //                 'Invoice: $displayInvoiceStatus',
+                        //                 provider.getInvoiceStatusColor(
+                        //                     displayInvoiceStatus),
+                        //               ),
+                        //             ),
+                        //           ],
+                        //         ),
+                        //       ],
+                        //     ),
+                        //   ),
+                        // ),
                         Card(
                           elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          color: statusDetails['showWarning'] == true
-                              ? Colors.amber[50]
-                              : Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      statusDetails['showWarning'] == true
-                                          ? Icons.warning_amber_rounded
-                                          : Icons.check_circle_outline,
-                                      color:
-                                          statusDetails['showWarning'] == true
-                                              ? Colors.orange[700]
-                                              : Colors.green[700],
-                                      size: 24,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      statusDetails['message'] as String,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color:
-                                            statusDetails['showWarning'] == true
-                                                ? Colors.orange[800]
-                                                : Colors.grey[800],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  statusDetails['details'] as String,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                const Divider(),
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Flexible(
-                                      flex: 1,
-                                      child: _buildStatusTag(
-                                        'Delivery: $deliveryStatus',
-                                        provider.getDeliveryStatusColor(
-                                            deliveryStatus),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 2,
-                                    ),
-                                    Flexible(
-                                      flex: 1,
-                                      child: _buildStatusTag(
-                                        'Invoice: $displayInvoiceStatus',
-                                        provider.getInvoiceStatusColor(
-                                            displayInvoiceStatus),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // Order Info Card
-                        Card(
-                          elevation: 2,
+                          margin: const EdgeInsets.only(bottom: 12.0),
+                          // Standardized margin
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -448,6 +447,30 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                             ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        OrderTrackingWidget(
+                          orderData: orderData,
+                          onTrackDelivery: (int pickingId) {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Track Delivery'),
+                                content: Text(
+                                    'Tracking delivery for picking ID: $pickingId'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('Close'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          onRefresh: () async {
+                            await provider.fetchOrderDetails();
+                          },
+                        ),
+                        // Order Info Card
 
                         const SizedBox(height: 20),
 
@@ -465,6 +488,8 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                         if (orderLines.isEmpty)
                           Card(
                             elevation: 1,
+                            margin: const EdgeInsets.only(bottom: 12.0),
+                            // Standardized margin
                             child: Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: Center(
@@ -488,19 +513,21 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
 
                               if (line['display_type'] == 'line_section' ||
                                   line['display_type'] == 'line_note') {
-                                return Card(
-                                  elevation: 1,
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  color: Colors.grey[100],
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Text(
-                                      line['name'] as String,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                        color: Colors.grey[800],
-                                      ),
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12.0),
+                                  // Standardized margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(16.0),
+                                  // Standardized padding
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    line['name'] as String,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Colors.grey[800],
                                     ),
                                   ),
                                 );
@@ -522,10 +549,12 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                   line['discount'] as double? ?? 0.0;
 
                               return Card(
-                                elevation: 1,
-                                margin: const EdgeInsets.only(bottom: 8),
+                                margin: const EdgeInsets.only(bottom: 12.0),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                                elevation: 0.5,
                                 child: Padding(
-                                  padding: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.all(16.0),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -543,18 +572,16 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                             MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
-                                            'Ordered: ${quantity.toStringAsFixed(quantity.truncateToDouble() == quantity ? 0 : 2)}',
+                                            'Qty: ${quantity.toStringAsFixed(quantity.truncateToDouble() == quantity ? 0 : 2)}',
                                             style: TextStyle(
-                                              color: Colors.grey[700],
-                                              fontSize: 14,
-                                            ),
+                                                color: Colors.grey[700],
+                                                fontSize: 13),
                                           ),
                                           Text(
-                                            'Unit Price: ${provider.currencyFormat.format(unitPrice)}',
+                                            'Price: ${provider.currencyFormat.format(unitPrice)}',
                                             style: TextStyle(
-                                              color: Colors.grey[700],
-                                              fontSize: 14,
-                                            ),
+                                                color: Colors.grey[700],
+                                                fontSize: 13),
                                           ),
                                         ],
                                       ),
@@ -567,9 +594,9 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                             'Delivered: ${qtyDelivered.toStringAsFixed(qtyDelivered.truncateToDouble() == qtyDelivered ? 0 : 2)}',
                                             style: TextStyle(
                                               color: qtyDelivered < quantity
-                                                  ? Colors.orange[700]
+                                                  ? Colors.orange[600]
                                                   : Colors.green[700],
-                                              fontSize: 14,
+                                              fontSize: 13,
                                               fontWeight: FontWeight.w500,
                                             ),
                                           ),
@@ -577,9 +604,9 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                             'Invoiced: ${qtyInvoiced.toStringAsFixed(qtyInvoiced.truncateToDouble() == qtyInvoiced ? 0 : 2)}',
                                             style: TextStyle(
                                               color: qtyInvoiced < quantity
-                                                  ? Colors.orange[700]
+                                                  ? Colors.orange[600]
                                                   : Colors.green[700],
-                                              fontSize: 14,
+                                              fontSize: 13,
                                               fontWeight: FontWeight.w500,
                                             ),
                                           ),
@@ -592,33 +619,20 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                           child: Text(
                                             'Discount: ${discount.toStringAsFixed(1)}%',
                                             style: TextStyle(
-                                              color: Colors.red[700],
-                                              fontSize: 14,
-                                            ),
+                                                color: Colors.red[700],
+                                                fontSize: 13),
                                           ),
                                         ),
-                                      const SizedBox(height: 8),
-                                      const Divider(height: 1),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          Text(
-                                            'Subtotal: ',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w500,
-                                              color: Colors.grey[800],
-                                            ),
+                                      const SizedBox(height: 10),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Text(
+                                          'Subtotal: ${provider.currencyFormat.format(subtotal)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
                                           ),
-                                          Text(
-                                            provider.currencyFormat
-                                                .format(subtotal),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -632,6 +646,8 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                         // Pricing Summary Card
                         Card(
                           elevation: 2,
+                          margin: const EdgeInsets.only(bottom: 12.0),
+                          // Standardized margin
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -706,7 +722,7 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                       style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: Color(0xFF1976D2),
+                                        color: Color(0xFFA12424),
                                       ),
                                     ),
                                   ],
@@ -735,6 +751,8 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                               const SizedBox(height: 8),
                               Card(
                                 elevation: 1,
+                                margin: const EdgeInsets.only(bottom: 12.0),
+                                // Standardized margin
                                 child: Padding(
                                   padding: const EdgeInsets.all(16.0),
                                   child: Text(
@@ -1008,122 +1026,108 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                               .format(dateCompleted),
                                         ),
                                       const SizedBox(height: 8),
-                                      FutureBuilder<Map<String, double>>(
-                                        future: getPickingProgress(),
-                                        builder: (context, snapshot) {
-                                          if (snapshot.connectionState ==
-                                              ConnectionState.waiting) {
-                                            return const Center(
-                                              child: Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  Text(
-                                                    'Loading progress...',
-                                                    style: TextStyle(
-                                                        fontSize: 14,
-                                                        color: Colors.grey,
-                                                        fontStyle:
-                                                            FontStyle.italic),
-                                                  ),
-                                                  SizedBox(width: 12),
-                                                  SizedBox(
-                                                    width: 30,
-                                                    height: 30,
-                                                    child:
-                                                        CircularProgressIndicator(
+                                      pickingState == 'cancel'
+                                          ? const SizedBox.shrink()
+                                          : FutureBuilder<Map<String, double>>(
+                                              future: getPickingProgress(),
+                                              builder: (context, snapshot) {
+                                                if (snapshot.connectionState ==
+                                                    ConnectionState.waiting) {
+                                                  return const Center(
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .center,
+                                                      children: [
+                                                        Text(
+                                                          'Loading progress...',
+                                                          style: TextStyle(
+                                                            fontSize: 14,
+                                                            color: Colors.grey,
+                                                            fontStyle: FontStyle
+                                                                .italic,
+                                                          ),
+                                                        ),
+                                                        SizedBox(width: 12),
+                                                        SizedBox(
+                                                          width: 30,
+                                                          height: 30,
+                                                          child:
+                                                              CircularProgressIndicator(
                                                             strokeWidth: 3,
-                                                            color:
-                                                                primaryColor),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }
-                                          final picked =
-                                              snapshot.data?['picked'] ?? 0.0;
-                                          final ordered =
-                                              snapshot.data?['ordered'] ?? 1.0;
-                                          final progress = (picked / ordered)
-                                              .clamp(0.0, 1.0);
-                                          final isFullyPicked =
-                                              picked >= ordered && ordered > 0;
-
-                                          return Padding(
-                                            padding: const EdgeInsets.all(6.0),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'Picking Progress',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 14,
-                                                      color: Colors.grey[800]),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                ClipRRect(
-                                                  borderRadius:
-                                                      BorderRadius.circular(10),
-                                                  child:
-                                                      LinearProgressIndicator(
-                                                    value: progress,
-                                                    minHeight: 10,
-                                                    backgroundColor:
-                                                        Colors.grey[300],
-                                                    valueColor:
-                                                        const AlwaysStoppedAnimation<
-                                                                Color>(
-                                                            Colors.green),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Text(
-                                                  'Picked: ${picked.toStringAsFixed(0)} / ${ordered.toStringAsFixed(0)}',
-                                                  style: TextStyle(
-                                                      fontSize: 13,
-                                                      color: Colors.grey[700]),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      const SizedBox(height: 12),
-                                      pickingState == 'done' ||
-                                              pickingState == 'cancel'
-                                          ? SizedBox(
-                                              width: double.infinity,
-                                              child: ElevatedButton.icon(
-                                                icon: const Icon(
-                                                    Icons.visibility,
-                                                    color: Colors.white),
-                                                label: const Text(
-                                                    'View Details',
-                                                    style: TextStyle(
-                                                        color: Colors.white)),
-                                                onPressed: () {
-                                                  Navigator.push(
-                                                    context,
-                                                    SlidingPageTransitionRL(
-                                                      page: DeliveryDetailsPage(
-                                                          pickingData: picking,
-                                                          provider: provider),
+                                                            color: primaryColor,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   );
-                                                },
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor:
-                                                      const Color(0xFFA12424),
-                                                  shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              8)),
-                                                ),
-                                              ),
-                                            )
+                                                }
+
+                                                final picked =
+                                                    snapshot.data?['picked'] ??
+                                                        0.0;
+                                                final ordered =
+                                                    snapshot.data?['ordered'] ??
+                                                        1.0;
+                                                final progress =
+                                                    (picked / ordered)
+                                                        .clamp(0.0, 1.0);
+                                                final isFullyPicked =
+                                                    picked >= ordered &&
+                                                        ordered > 0;
+
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(6.0),
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        'Picking Progress',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 14,
+                                                          color:
+                                                              Colors.grey[800],
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      ClipRRect(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(10),
+                                                        child:
+                                                            LinearProgressIndicator(
+                                                          value: progress,
+                                                          minHeight: 10,
+                                                          backgroundColor:
+                                                              Colors.grey[300],
+                                                          valueColor:
+                                                              const AlwaysStoppedAnimation<
+                                                                      Color>(
+                                                                  Colors.green),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      Text(
+                                                        'Picked: ${picked.toStringAsFixed(0)} / ${ordered.toStringAsFixed(0)}',
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color:
+                                                              Colors.grey[700],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                      const SizedBox(height: 12),
+                                      pickingState == 'cancel'
+                                          ? const SizedBox.shrink()
                                           : FutureBuilder<Map<String, double>>(
                                               future: getPickingProgress(),
                                               builder: (context, snapshot) {
@@ -1132,6 +1136,7 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                                   return const SizedBox
                                                       .shrink();
                                                 }
+
                                                 final picked =
                                                     snapshot.data?['picked'] ??
                                                         0.0;
@@ -1155,19 +1160,22 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                                             color:
                                                                 Colors.white),
                                                         label: const Text(
-                                                            'View Details',
-                                                            style: TextStyle(
-                                                                color: Colors
-                                                                    .white)),
+                                                          'View Details',
+                                                          style: TextStyle(
+                                                              color:
+                                                                  Colors.white),
+                                                        ),
                                                         onPressed: () {
                                                           Navigator.push(
                                                             context,
                                                             SlidingPageTransitionRL(
-                                                              page: DeliveryDetailsPage(
-                                                                  pickingData:
-                                                                      picking,
-                                                                  provider:
-                                                                      provider),
+                                                              page:
+                                                                  DeliveryDetailsPage(
+                                                                pickingData:
+                                                                    picking,
+                                                                provider:
+                                                                    provider,
+                                                              ),
                                                             ),
                                                           );
                                                         },
@@ -1176,11 +1184,13 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                                           backgroundColor:
                                                               const Color(
                                                                   0xFFA12424),
-                                                          shape: RoundedRectangleBorder(
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          8)),
+                                                          shape:
+                                                              RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        8),
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
@@ -1194,41 +1204,41 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                                                 Colors.white),
                                                         label: Text(
                                                           isFullyPicked
-                                                              ? 'Fully Picked'
+                                                              ? 'Edit Picking'
                                                               : 'Pick Products',
                                                           style:
                                                               const TextStyle(
                                                                   color: Colors
                                                                       .white),
                                                         ),
-                                                        onPressed: isFullyPicked
-                                                            ? null // Disable if fully picked
-                                                            : () {
-                                                                Navigator.push(
-                                                                    context,
-                                                                    SlidingPageTransitionRL(
-                                                                        page: PickingPage(
-                                                                            picking:
-                                                                                picking,
-                                                                            orderLines:
-                                                                                orderLines,
-                                                                            warehouseId:
-                                                                                warehouseId,
-                                                                            provider:
-                                                                                provider)));
-                                                              },
+                                                        onPressed: () {
+                                                          Navigator.push(
+                                                            context,
+                                                            SlidingPageTransitionRL(
+                                                              page: PickingPage(
+                                                                picking:
+                                                                    picking,
+                                                                orderLines:
+                                                                    orderLines,
+                                                                warehouseId:
+                                                                    warehouseId,
+                                                                provider:
+                                                                    provider,
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
                                                         style: ElevatedButton
                                                             .styleFrom(
                                                           backgroundColor:
-                                                              isFullyPicked
-                                                                  ? Colors.grey
-                                                                  : Colors
-                                                                      .green,
-                                                          shape: RoundedRectangleBorder(
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          8)),
+                                                              Colors.green,
+                                                          shape:
+                                                              RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        8),
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
@@ -1465,7 +1475,6 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
                                                 SlidingPageTransitionRL(
                                                   page: InvoiceDetailsPage(
                                                     invoiceData: invoice,
-                                                    provider: provider,
                                                   ),
                                                 ),
                                               );
@@ -1611,7 +1620,7 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
+      padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1637,28 +1646,6 @@ class _SaleOrderDetailPageState extends State<SaleOrderDetailPage>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusTag(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: color.withOpacity(0.5),
-          width: 1,
-        ),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
       ),
     );
   }

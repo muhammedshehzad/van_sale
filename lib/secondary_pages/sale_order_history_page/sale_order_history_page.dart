@@ -7,8 +7,6 @@ import '../../authentication/cyllo_session_model.dart';
 import '../../main_pages/select_products_page/order_picking_provider.dart';
 import '../../secondary_pages/sale_order_creation/sales_order_provider.dart';
 
-
-
 class SaleOrderHistoryPage extends StatefulWidget {
   const SaleOrderHistoryPage({Key? key}) : super(key: key);
 
@@ -86,11 +84,14 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
           try {
             final orderId = (order['name'] as String?)?.toLowerCase() ?? '';
             final customer = order['partner_id'] is List
-                ? (order['partner_id'] as List)[1]?.toString().toLowerCase() ?? 'unknown'
+                ? (order['partner_id'] as List)[1]?.toString().toLowerCase() ??
+                    'unknown'
                 : 'unknown';
             final state = (order['state'] as String?)?.toLowerCase() ?? '';
-            final deliveryStatus = (order['delivery_status'] as String?)?.toLowerCase() ?? '';
-            final invoiceStatus = (order['invoice_status'] as String?)?.toLowerCase() ?? '';
+            final deliveryStatus =
+                (order['delivery_status'] as String?)?.toLowerCase() ?? '';
+            final invoiceStatus =
+                (order['invoice_status'] as String?)?.toLowerCase() ?? '';
 
             return orderId.contains(query) ||
                 customer.contains(query) ||
@@ -105,6 +106,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
       }
     });
   }
+
   void _navigateToOrderDetail(
       BuildContext context, Map<String, dynamic> order) {
     Navigator.push(
@@ -141,7 +143,8 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding:
+              const EdgeInsets.only(left: 16.0, right: 16, top: 16, bottom: 4),
           child: Column(
             children: [
               TextField(
@@ -174,7 +177,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                         child:
-                        CircularProgressIndicator(color: Color(0xFFA12424)),
+                            CircularProgressIndicator(color: Color(0xFFA12424)),
                       );
                     }
                     if (snapshot.hasError) {
@@ -210,7 +213,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
 
                     _allOrders = snapshot.data!;
                     _filteredOrders = _filteredOrders.isEmpty &&
-                        _searchController.text.isEmpty
+                            _searchController.text.isEmpty
                         ? List.from(_allOrders)
                         : _filteredOrders;
 
@@ -241,21 +244,26 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                     return ListView.separated(
                       itemCount: _filteredOrders.length,
                       separatorBuilder: (context, index) =>
-                      const SizedBox(height: 8),
+                          const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         final order = _filteredOrders[index];
-                        final orderId = order['name'] as String;
+                        final orderId = order['name'] is String
+                            ? order['name'] as String
+                            : order['name'].toString();
                         final customer = order['partner_id'] is List
                             ? (order['partner_id'] as List)[1] as String
                             : 'Unknown';
                         final dateOrder =
-                        DateTime.parse(order['date_order'] as String);
+                            DateTime.parse(order['date_order'] as String);
                         final totalAmount = order['amount_total'] as double;
                         final state = order['state'] as String;
                         final deliveryStatus =
-                            order['delivery_status'] as String? ?? 'unknown';
-                        final invoiceStatus =
-                            order['invoice_status'] as String? ?? 'unknown';
+                            order['delivery_status'] is String
+                                ? order['delivery_status'] as String
+                                : 'unknown';
+                        final invoiceStatus = order['invoice_status'] is String
+                            ? order['invoice_status'] as String
+                            : 'unknown';
 
                         return InkWell(
                           onTap: () => _navigateToOrderDetail(context, order),
@@ -265,7 +273,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                             elevation: 2,
                             shape: RoundedRectangleBorder(
                               borderRadius:
-                              BorderRadius.circular(kBorderRadius),
+                                  BorderRadius.circular(kBorderRadius),
                             ),
                             child: Padding(
                               padding: const EdgeInsets.all(12),
@@ -274,7 +282,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                                 children: [
                                   Row(
                                     mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'Order: $orderId',
@@ -293,7 +301,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                                           color: _getStatusColor(state)
                                               .withOpacity(0.1),
                                           borderRadius:
-                                          BorderRadius.circular(6),
+                                              BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           _formatState(state),
@@ -359,7 +367,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
                                   const SizedBox(height: 8),
                                   Row(
                                     mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'Total Amount:',
@@ -470,6 +478,7 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
       ),
     );
   }
+
   Color _getDeliveryStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'full':
@@ -508,7 +517,8 @@ class _SaleOrderHistoryPageState extends State<SaleOrderHistoryPage> {
       default:
         return status.capitalize();
     }
-  }}
+  }
+}
 
 extension StringExtension on String {
   String capitalize() {

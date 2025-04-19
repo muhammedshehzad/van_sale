@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'package:provider/provider.dart';
+import 'package:van_sale_applicatioin/main_pages/select_products_page/add_products_page.dart';
+import 'package:van_sale_applicatioin/widgets/page_transition.dart';
 import '../main_pages/select_products_page/order_picking_provider.dart';
 import '../secondary_pages/sale_order_creation/sales_order_provider.dart';
 
@@ -437,8 +439,9 @@ class _OrderTakingPageState extends State<OrderTakingPage> {
                                                 kBorderRadius),
                                           ),
                                         ),
-                                        onPressed: () =>
-                                            provider.addNewProduct(context),
+                                        onPressed: () {
+                                          Navigator.push(context, SlidingPageTransitionRL(page: AddProductPage()));
+                                        },
                                         child: const Text('Add Product'),
                                       ),
                                       const SizedBox(width: 8),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:animated_custom_dropdown/custom_dropdown.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../authentication/cyllo_session_model.dart';
 
 Map<String, int> _temporaryInventory = {};
@@ -49,7 +50,7 @@ class Product with CustomDropdownListFilter {
 class ProductAttribute {
   final String name;
   final List<String> values;
-  final Map<String, double>? extraCost; // e.g., {"Black": 2.0, "White": 1.0}
+  final Map<String, double>? extraCost;
 
   ProductAttribute({required this.name, required this.values, this.extraCost});
 }
@@ -135,7 +136,7 @@ class SalesOrder {
 
   double get total => items.fold<double>(
         0,
-        (sum, item) => sum + (item.product.price * item.quantity),
+        (sum, item) => sum + item.subtotal,
       );
 }
 
@@ -148,6 +149,10 @@ class SalesOrderProvider with ChangeNotifier {
   SalesOrder? _salesOrder;
   bool _isLoading = false;
   final Set<String> _confirmedOrderIds = {};
+  String? _draftOrderId;
+  List<Product> _draftSelectedProducts = [];
+  Map<String, int> _draftQuantities = {};
+  Map<String, List<Map<String, dynamic>>> _draftProductAttributes = {};
 
   bool isOrderIdConfirmed(String orderId) {
     return _confirmedOrderIds.contains(orderId);
@@ -166,6 +171,15 @@ class SalesOrderProvider with ChangeNotifier {
   SalesOrder? get salesOrder => _salesOrder;
 
   bool get isLoading => _isLoading;
+
+  String? get draftOrderId => _draftOrderId;
+
+  List<Product> get draftSelectedProducts => _draftSelectedProducts;
+
+  Map<String, int> get draftQuantities => _draftQuantities;
+
+  Map<String, List<Map<String, dynamic>>> get draftProductAttributes =>
+      _draftProductAttributes;
 
   void setCurrentStep(int step) {
     if (step <= _currentStep) {
@@ -211,6 +225,160 @@ class SalesOrderProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<int?> _findExistingDraftOrder(String orderId) async {
+    try {
+      final client = await SessionManager.getActiveClient();
+      if (client == null) {
+        throw Exception('No active Odoo session found. Please log in again.');
+      }
+
+      final result = await client.callKw({
+        'model': 'sale.order',
+        'method': 'search',
+        'args': [
+          [
+            ['name', '=', orderId],
+            ['state', '=', 'draft'],
+          ]
+        ],
+        'kwargs': {},
+      });
+
+      if (result is List && result.isNotEmpty) {
+        return result[0] as int; // Return the Odoo ID of the existing draft
+      }
+      return null;
+    } catch (e) {
+      log('Error searching for draft order: $e');
+      return null;
+    }
+  }
+
+  Future<void> createDraftSaleOrder({
+    required String orderId,
+    required List<Product> selectedProducts,
+    required Map<String, int> quantities,
+    required Map<String, List<Map<String, dynamic>>> productAttributes,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final client = await SessionManager.getActiveClient();
+      if (client == null) {
+        throw Exception('No active Odoo session found. Please log in again.');
+      }
+
+      // Prepare order lines
+      final orderLines = <dynamic>[];
+      for (var product in selectedProducts) {
+        final attributes = productAttributes[product.id];
+        if (attributes != null && attributes.isNotEmpty) {
+          for (var combo in attributes) {
+            final qty = combo['quantity'] as int;
+            final attrs = combo['attributes'] as Map<String, String>;
+            double extraCost = 0;
+            for (var attr in product.attributes!) {
+              final value = attrs[attr.name];
+              if (value != null && attr.extraCost != null) {
+                extraCost += attr.extraCost![value] ?? 0;
+              }
+            }
+            final adjustedPrice = product.price + extraCost;
+            orderLines.add([
+              0,
+              0,
+              {
+                'product_id': int.parse(product.id),
+                'name':
+                    '${product.name} (${attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ')})',
+                'product_uom_qty': qty,
+                'price_unit': adjustedPrice,
+              }
+            ]);
+          }
+        } else {
+          final quantity = quantities[product.id] ?? 0;
+          if (quantity > 0) {
+            orderLines.add([
+              0,
+              0,
+              {
+                'product_id': int.parse(product.id),
+                'name': product.name,
+                'product_uom_qty': quantity,
+                'price_unit': product.price,
+              }
+            ]);
+          }
+        }
+      }
+
+      // Check for existing draft
+      final existingOrderId = await _findExistingDraftOrder(orderId);
+      int saleOrderId;
+
+      if (existingOrderId != null) {
+        // Update existing draft
+        await client.callKw({
+          'model': 'sale.order',
+          'method': 'write',
+          'args': [
+            [existingOrderId],
+            {
+              'order_line': [
+                [5, 0, 0]
+              ], // Clear existing lines
+            },
+          ],
+          'kwargs': {},
+        });
+        await client.callKw({
+          'model': 'sale.order',
+          'method': 'write',
+          'args': [
+            [existingOrderId],
+            {
+              'order_line': orderLines,
+            },
+          ],
+          'kwargs': {},
+        });
+        saleOrderId = existingOrderId;
+        log('Draft sale order updated: $orderId (Odoo ID: $saleOrderId)');
+      } else {
+        // Create new draft
+        saleOrderId = await client.callKw({
+          'model': 'sale.order',
+          'method': 'create',
+          'args': [
+            {
+              'name': orderId,
+              'partner_id': 1, // Default customer ID (replace with actual ID)
+              'order_line': orderLines,
+              'state': 'draft',
+              'date_order':
+                  DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
+            }
+          ],
+          'kwargs': {},
+        });
+        log('Draft sale order created: $orderId (Odoo ID: $saleOrderId)');
+      }
+
+      _draftOrderId = orderId;
+      _draftSelectedProducts = List.from(selectedProducts);
+      _draftQuantities = Map.from(quantities);
+      _draftProductAttributes = Map.from(productAttributes);
+    } catch (e) {
+      log('Error managing draft sale order: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> confirmOrderInCyllo({
     required String orderId,
     required List<OrderItem> items,
@@ -229,6 +397,7 @@ class SalesOrderProvider with ChangeNotifier {
       _orderItems = [];
       _temporaryInventory.clear();
       _confirmedOrderIds.add(orderId);
+      clearDraft();
       notifyListeners();
     } catch (e) {
       log('Error confirming order: $e');
@@ -237,6 +406,14 @@ class SalesOrderProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  void clearDraft() {
+    _draftOrderId = null;
+    _draftSelectedProducts.clear();
+    _draftQuantities.clear();
+    _draftProductAttributes.clear();
+    notifyListeners();
   }
 
   void notifyOrderConfirmed() {
@@ -291,7 +468,6 @@ class SalesOrderProvider with ChangeNotifier {
         throw Exception('No active Odoo session found. Please log in again.');
       }
 
-      // Fetch product variants
       final productResult = await client.callKw({
         'model': 'product.product',
         'method': 'search_read',
@@ -318,7 +494,6 @@ class SalesOrderProvider with ChangeNotifier {
         },
       });
 
-      // Fetch attribute lines for all product templates
       final templateIds = (productResult as List)
           .map((productData) => productData['product_tmpl_id'][0] as int)
           .toSet()
@@ -341,7 +516,6 @@ class SalesOrderProvider with ChangeNotifier {
         },
       });
 
-      // Fetch attribute names
       final attributeIds = (attributeLineResult as List)
           .map((attr) => attr['attribute_id'][0] as int)
           .toSet()
@@ -359,7 +533,6 @@ class SalesOrderProvider with ChangeNotifier {
         },
       });
 
-      // Fetch product template attribute values with price_extra
       final templateAttributeValueResult = await client.callKw({
         'model': 'product.template.attribute.value',
         'method': 'search_read',
@@ -378,7 +551,6 @@ class SalesOrderProvider with ChangeNotifier {
         },
       });
 
-      // Fetch attribute values (just names)
       final valueIds = (templateAttributeValueResult as List)
           .map((attr) => attr['product_attribute_value_id'][0] as int)
           .toSet()
@@ -396,7 +568,6 @@ class SalesOrderProvider with ChangeNotifier {
         },
       });
 
-      // Create lookup maps
       final attributeNameMap = {
         for (var attr in attributeNames) attr['id']: attr['name'] as String
       };
@@ -404,24 +575,25 @@ class SalesOrderProvider with ChangeNotifier {
         for (var val in attributeValues) val['id']: val['name'] as String
       };
 
-      // Map template attribute values with extra costs
-      final templateAttributeValueMap = <int, Map<int, Map<int, Map<String, dynamic>>>>{};
+      final templateAttributeValueMap =
+          <int, Map<int, Map<int, Map<String, dynamic>>>>{};
       for (var attrVal in templateAttributeValueResult) {
         final templateId = attrVal['product_tmpl_id'][0] as int;
         final attributeId = attrVal['attribute_id'][0] as int;
-        final valueId = attrVal['product_attribute_value_id'][0] as int; // Ensure int
+        final valueId = attrVal['product_attribute_value_id'][0] as int;
         final priceExtra = (attrVal['price_extra'] as num?)?.toDouble() ?? 0.0;
 
         templateAttributeValueMap.putIfAbsent(templateId, () => {});
-        templateAttributeValueMap[templateId]!.putIfAbsent(attributeId, () => {});
-        templateAttributeValueMap[templateId]![attributeId]!.putIfAbsent(valueId, () => {});
+        templateAttributeValueMap[templateId]!
+            .putIfAbsent(attributeId, () => {});
+        templateAttributeValueMap[templateId]![attributeId]!
+            .putIfAbsent(valueId, () => {});
         templateAttributeValueMap[templateId]![attributeId]![valueId] = {
           'name': attributeValueMap[valueId] ?? 'Unknown',
           'price_extra': priceExtra,
         };
       }
 
-      // Map attributes by product template ID
       final templateAttributes = <int, List<ProductAttribute>>{};
       for (var attrLine in attributeLineResult) {
         final templateId = attrLine['product_tmpl_id'][0] as int;
@@ -435,21 +607,24 @@ class SalesOrderProvider with ChangeNotifier {
             .cast<String>();
         final extraCosts = <String, double>{
           for (var id in valueIds)
-            attributeValueMap[id as int]!: // Cast id to int
-            (templateAttributeValueMap[templateId]?[attributeId]?[id as int]?['price_extra'] as num?)?.toDouble() ?? 0.0
+            attributeValueMap[id as int]!:
+                (templateAttributeValueMap[templateId]?[attributeId]?[id as int]
+                            ?['price_extra'] as num?)
+                        ?.toDouble() ??
+                    0.0
         };
 
         templateAttributes.putIfAbsent(templateId, () => []).add(
-          ProductAttribute(
-            name: attributeName,
-            values: values,
-            extraCost: extraCosts,
-          ),
-        );
+              ProductAttribute(
+                name: attributeName,
+                values: values,
+                extraCost: extraCosts,
+              ),
+            );
       }
 
-
-      final List<Product> fetchedProducts = (productResult as List).map((productData) {
+      final List<Product> fetchedProducts =
+          (productResult as List).map((productData) {
         String? imageUrl;
         final imageData = productData['image_1920'];
 
@@ -472,21 +647,29 @@ class SalesOrderProvider with ChangeNotifier {
 
         return Product(
           id: productData['id'].toString(),
-          name: productData['name'] is String ? productData['name'] : 'Unnamed Product',
+          name: productData['name'] is String
+              ? productData['name']
+              : 'Unnamed Product',
           price: (productData['list_price'] as num?)?.toDouble() ?? 0.0,
           vanInventory: (productData['qty_available'] as num?)?.toInt() ?? 0,
           imageUrl: imageUrl,
           defaultCode: defaultCode,
-          sellerIds: productData['seller_ids'] is List ? productData['seller_ids'] : [],
-          taxesIds: productData['taxes_id'] is List ? productData['taxes_id'] : [],
+          sellerIds: productData['seller_ids'] is List
+              ? productData['seller_ids']
+              : [],
+          taxesIds:
+              productData['taxes_id'] is List ? productData['taxes_id'] : [],
           categId: productData['categ_id'] ?? false,
-          propertyStockProduction: productData['property_stock_production'] ?? false,
-          propertyStockInventory: productData['property_stock_inventory'] ?? false,
+          propertyStockProduction:
+              productData['property_stock_production'] ?? false,
+          propertyStockInventory:
+              productData['property_stock_inventory'] ?? false,
           attributes: attributes.isNotEmpty ? attributes : null,
         );
       }).toList();
 
-      fetchedProducts.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      fetchedProducts
+          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       _products = fetchedProducts;
 
       log("Successfully fetched ${fetchedProducts.length} storable products");
@@ -516,4 +699,5 @@ class SalesOrderProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
-  }}
+  }
+}

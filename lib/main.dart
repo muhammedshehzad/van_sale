@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:van_sale_applicatioin/main_pages/select_products_page/order_picking_provider.dart';
 import 'package:van_sale_applicatioin/secondary_pages/sale_order_creation/sales_order_provider.dart';
+import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/invoice_details_page/invoice_details_provider.dart';
 import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/sale_order_detail_provider.dart';
 import 'package:van_sale_applicatioin/secondary_pages/sale_order_history_page/sale_order_details_page/delivery_details_page/delivey_details_page.dart';
 import 'authentication/login_page.dart';
@@ -25,6 +26,9 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => SalesOrderProvider()),
         ChangeNotifierProvider(create: (_) => OrderPickingProvider()),
+        ChangeNotifierProvider(create: (_) => InvoiceDetailsProvider()),
+        ChangeNotifierProvider(
+            create: (_) => SaleOrderDetailProvider(orderData: {})),
       ],
       child: const MyApp(),
     ),
@@ -72,20 +76,24 @@ class _MyAppState extends State<MyApp> {
       progressTracker.completeTask('Checking login');
 
       if (isLoggedIn) {
-        final orderProvider = Provider.of<OrderPickingProvider>(context, listen: false);
-        final salesProvider = Provider.of<SalesOrderProvider>(context, listen: false);
+        final orderProvider =
+            Provider.of<OrderPickingProvider>(context, listen: false);
+        final salesProvider =
+            Provider.of<SalesOrderProvider>(context, listen: false);
 
         // Task 2: Load products
         await salesProvider.loadProducts();
         progressTracker.completeTask('Loading products');
 
         // Task 3: Load customers
-        await orderProvider.loadCustomers(); // Changed to await for sequential progress
+        await orderProvider
+            .loadCustomers(); // Changed to await for sequential progress
         progressTracker.completeTask('Loading customers');
 
         // Task 4: Fetch order details
         final orderData = {'id': 1}; // Replace with actual order data
-        final saleOrderDetailProvider = SaleOrderDetailProvider(orderData: orderData);
+        final saleOrderDetailProvider =
+            SaleOrderDetailProvider(orderData: orderData);
         await saleOrderDetailProvider.fetchOrderDetails();
         progressTracker.completeTask('Fetching order details');
       }
@@ -175,13 +183,15 @@ class LoadingScreen extends StatefulWidget {
   final String message;
   final double progress;
 
-  const LoadingScreen({super.key, required this.message, required this.progress});
+  const LoadingScreen(
+      {super.key, required this.message, required this.progress});
 
   @override
   State<LoadingScreen> createState() => _LoadingScreenState();
 }
 
-class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProviderStateMixin {
+class _LoadingScreenState extends State<LoadingScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _progressAnimation;
 
@@ -192,7 +202,8 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
       duration: const Duration(milliseconds: 500),
       vsync: this,
     );
-    _progressAnimation = Tween<double>(begin: 0.0, end: widget.progress).animate(
+    _progressAnimation =
+        Tween<double>(begin: 0.0, end: widget.progress).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
     _controller.forward();
@@ -275,7 +286,6 @@ class RadialProgressPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
 
-
     final backgroundPaint = Paint()
       ..color = backgroundColor
       ..style = PaintingStyle.stroke
@@ -304,10 +314,13 @@ class RadialProgressPainter extends CustomPainter {
         oldDelegate.backgroundColor != backgroundColor;
   }
 }
+
 class ErrorScreen extends StatelessWidget {
   final String errorMessage;
   final VoidCallback onRetry;
-  const ErrorScreen({super.key, required this.errorMessage, required this.onRetry});
+
+  const ErrorScreen(
+      {super.key, required this.errorMessage, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -342,6 +355,7 @@ class HomeScreen extends StatelessWidget {
       Provider.of<OrderPickingProvider>(context, listen: false)
           .showProductSelectionPage(context);
     });
-    return const LoadingScreen(message: 'Preparing workspace...', progress: 1.0);
+    return const LoadingScreen(
+        message: 'Preparing workspace...', progress: 1.0);
   }
 }

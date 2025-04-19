@@ -1,5 +1,4 @@
 import 'dart:developer';
-
 import 'package:animated_custom_dropdown/custom_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -39,7 +38,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final orderPickingProvider =
-          Provider.of<OrderPickingProvider>(context, listen: false);
+      Provider.of<OrderPickingProvider>(context, listen: false);
       if (orderPickingProvider.customers.isEmpty) {
         orderPickingProvider.loadCustomers();
       }
@@ -126,7 +125,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Order ID ${widget.orderId} already exists.',
+                      'Order ID ${widget.orderId} is already confirmed.',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -171,10 +170,9 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                         ),
                       ),
                       onPressed: () {
-                        widget.onClearSelections
-                            ?.call(); // Call the callback here
-                        Navigator.of(context).pop(); // Close dialog
-                        Navigator.pop(context); // Return to previous screen
+                        widget.onClearSelections?.call();
+                        Navigator.of(context).pop();
+                        Navigator.pop(context);
                       },
                       child: Text(
                         'Go Back',
@@ -195,11 +193,35 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
     );
   }
 
+  Future<int?> _findExistingDraftOrder(dynamic client, String orderId) async {
+    try {
+      final result = await client.callKw({
+        'model': 'sale.order',
+        'method': 'search',
+        'args': [
+          [
+            ['name', '=', orderId],
+            ['state', '=', 'draft'],
+          ]
+        ],
+        'kwargs': {},
+      });
+
+      if (result is List && result.isNotEmpty) {
+        return result[0] as int; // Return the Odoo ID of the existing draft
+      }
+      return null;
+    } catch (e) {
+      log('Error searching for draft order: $e');
+      return null;
+    }
+  }
+
   Future<void> _createSaleOrderInOdoo(BuildContext context) async {
     final salesOrderProvider =
-        Provider.of<SalesOrderProvider>(context, listen: false);
+    Provider.of<SalesOrderProvider>(context, listen: false);
     final orderPickingProvider =
-        Provider.of<OrderPickingProvider>(context, listen: false);
+    Provider.of<OrderPickingProvider>(context, listen: false);
 
     try {
       if (salesOrderProvider.isOrderIdConfirmed(widget.orderId)) {
@@ -211,7 +233,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content:
-                Text('Please select a customer before confirming the order'),
+            Text('Please select a customer before confirming the order'),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 3),
           ),
@@ -224,6 +246,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
         throw Exception('No active Odoo session found. Please log in again.');
       }
 
+      // Prepare order lines
       final orderLines = <dynamic>[];
       for (var product in widget.selectedProducts) {
         final attributes = widget.productAttributes?[product.id];
@@ -245,7 +268,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
               {
                 'product_id': int.parse(product.id),
                 'name':
-                    '${product.name} (${attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ')})',
+                '${product.name} (${attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ')})',
                 'product_uom_qty': qty,
                 'price_unit': adjustedPrice,
               }
@@ -268,27 +291,70 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
         }
       }
 
-      final saleOrderId = await client.callKw({
-        'model': 'sale.order',
-        'method': 'create',
-        'args': [
-          {
-            'name': widget.orderId,
-            'partner_id': int.parse(_selectedCustomer!.id),
-            'order_line': orderLines,
-            'state': 'sale',
-            'date_order':
-                DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
-          }
-        ],
-        'kwargs': {},
-      });
+      // Check for existing draft order
+      final existingDraftId = await _findExistingDraftOrder(client, widget.orderId);
+      int saleOrderId;
+
+      if (existingDraftId != null) {
+        // Update existing draft order
+        await client.callKw({
+          'model': 'sale.order',
+          'method': 'write',
+          'args': [
+            [existingDraftId],
+            {
+              'partner_id': int.parse(_selectedCustomer!.id),
+              'order_line': [
+                [5, 0, 0] // Clear existing lines
+              ],
+              'state': 'sale',
+              'date_order':
+              DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
+            },
+          ],
+          'kwargs': {},
+        });
+
+        // Add new order lines
+        await client.callKw({
+          'model': 'sale.order',
+          'method': 'write',
+          'args': [
+            [existingDraftId],
+            {
+              'order_line': orderLines,
+            },
+          ],
+          'kwargs': {},
+        });
+        saleOrderId = existingDraftId;
+        log('Draft sale order updated and confirmed: ${widget.orderId} (Odoo ID: $saleOrderId)');
+      } else {
+        // Create new sale order
+        saleOrderId = await client.callKw({
+          'model': 'sale.order',
+          'method': 'create',
+          'args': [
+            {
+              'name': widget.orderId,
+              'partner_id': int.parse(_selectedCustomer!.id),
+              'order_line': orderLines,
+              'state': 'sale',
+              'date_order':
+              DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now()),
+            }
+          ],
+          'kwargs': {},
+        });
+        log('New sale order created: ${widget.orderId} (Odoo ID: $saleOrderId)');
+      }
 
       final orderItems = widget.selectedProducts
           .map((product) => OrderItem(
-                product: product,
-                quantity: widget.quantities[product.id] ?? 0,
-              ))
+        product: product,
+        quantity: widget.quantities[product.id] ?? 0,
+        productAttributes: widget.productAttributes,
+      ))
           .toList();
 
       await salesOrderProvider.confirmOrderInCyllo(
@@ -311,12 +377,10 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
 
   void _showCustomerSelectionDialog(BuildContext context) {
     final orderPickingProvider =
-        Provider.of<OrderPickingProvider>(context, listen: false);
-    bool _isConfirmLoading =
-        false;
+    Provider.of<OrderPickingProvider>(context, listen: false);
+    bool _isConfirmLoading = false;
 
     Customer? localSelectedCustomer = _selectedCustomer;
-
 
     if (orderPickingProvider.customers.isEmpty &&
         !orderPickingProvider.isLoadingCustomers) {
@@ -346,7 +410,6 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Header remains the same
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -407,163 +470,163 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                         children: [
                           orderPickingProvider.isLoadingCustomers
                               ? const Center(
-                                  child: SizedBox(
-                                      height: 40,
-                                      child: CircularProgressIndicator()))
+                              child: SizedBox(
+                                  height: 40,
+                                  child: CircularProgressIndicator()))
                               : CustomDropdown<Customer>.search(
-                                  items: orderPickingProvider.customers,
-                                  hintText: 'Select or search customer...',
-                                  searchHintText: 'Search customers...',
-                                  noResultFoundText: orderPickingProvider
-                                          .customers.isEmpty
-                                      ? 'No customers found. Create a new customer?'
-                                      : 'No matching customers found',
-                                  noResultFoundBuilder: orderPickingProvider
-                                          .customers.isEmpty
-                                      ? (context, searchText) {
-                                          return GestureDetector(
-                                            onTap: () => orderPickingProvider
-                                                .showCreateCustomerDialog(
-                                                    context),
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 12,
-                                                      horizontal: 16),
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.add_circle,
-                                                      color: primaryColor),
-                                                  const SizedBox(width: 8),
-                                                  const Text(
-                                                    'Create New Customer',
-                                                    style: TextStyle(
-                                                      color: primaryColor,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      : null,
-                                  decoration: CustomDropdownDecoration(
-                                    closedBorder:
-                                        Border.all(color: Colors.grey[300]!),
-                                    closedBorderRadius:
-                                        BorderRadius.circular(8),
-                                    expandedBorderRadius:
-                                        BorderRadius.circular(8),
-                                    listItemDecoration: ListItemDecoration(
-                                      selectedColor:
-                                          primaryColor.withOpacity(0.1),
-                                    ),
-                                    headerStyle: const TextStyle(
-                                      color: Colors.black87,
-                                      fontSize: 16,
-                                    ),
-                                    searchFieldDecoration:
-                                        SearchFieldDecoration(
-                                      hintStyle:
-                                          TextStyle(color: Colors.grey[600]),
-                                      fillColor: Colors.white,
-                                      border: OutlineInputBorder(
-                                        borderSide: BorderSide(
-                                            color: Colors.grey[300]!),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderSide: BorderSide(
+                            items: orderPickingProvider.customers,
+                            hintText: 'Select or search customer...',
+                            searchHintText: 'Search customers...',
+                            noResultFoundText: orderPickingProvider
+                                .customers.isEmpty
+                                ? 'No customers found. Create a new customer?'
+                                : 'No matching customers found',
+                            noResultFoundBuilder: orderPickingProvider
+                                .customers.isEmpty
+                                ? (context, searchText) {
+                              return GestureDetector(
+                                onTap: () => orderPickingProvider
+                                    .showCreateCustomerDialog(
+                                    context),
+                                child: Container(
+                                  padding:
+                                  const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                      horizontal: 16),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.add_circle,
+                                          color: primaryColor),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'Create New Customer',
+                                        style: TextStyle(
                                           color: primaryColor,
-                                          width: 2,
+                                          fontWeight:
+                                          FontWeight.bold,
                                         ),
-                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                  initialItem: localSelectedCustomer,
-                                  headerBuilder:
-                                      (context, customer, isSelected) {
-                                    return Text(customer.name);
-                                  },
-                                  listItemBuilder: (context, customer,
-                                      isSelected, onItemSelect) {
-                                    return GestureDetector(
-                                      onTap: () {
-                                        onItemSelect();
-                                        setDialogState(() {
-                                          localSelectedCustomer = customer;
-                                        });
-                                        setState(() {
-                                          _selectedCustomer = customer;
-                                        });
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 12, horizontal: 16),
-                                        child: Row(
+                                ),
+                              );
+                            }
+                                : null,
+                            decoration: CustomDropdownDecoration(
+                              closedBorder:
+                              Border.all(color: Colors.grey[300]!),
+                              closedBorderRadius:
+                              BorderRadius.circular(8),
+                              expandedBorderRadius:
+                              BorderRadius.circular(8),
+                              listItemDecoration: ListItemDecoration(
+                                selectedColor:
+                                primaryColor.withOpacity(0.1),
+                              ),
+                              headerStyle: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 16,
+                              ),
+                              searchFieldDecoration:
+                              SearchFieldDecoration(
+                                hintStyle:
+                                TextStyle(color: Colors.grey[600]),
+                                fillColor: Colors.white,
+                                border: OutlineInputBorder(
+                                  borderSide: BorderSide(
+                                      color: Colors.grey[300]!),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(
+                                    color: primaryColor,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                            initialItem: localSelectedCustomer,
+                            headerBuilder:
+                                (context, customer, isSelected) {
+                              return Text(customer.name);
+                            },
+                            listItemBuilder: (context, customer,
+                                isSelected, onItemSelect) {
+                              return GestureDetector(
+                                onTap: () {
+                                  onItemSelect();
+                                  setDialogState(() {
+                                    localSelectedCustomer = customer;
+                                  });
+                                  setState(() {
+                                    _selectedCustomer = customer;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12, horizontal: 16),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                           children: [
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    customer.name,
-                                                    style: TextStyle(
-                                                      color: isSelected
-                                                          ? primaryColor
-                                                          : Colors.black87,
-                                                      fontWeight: isSelected
-                                                          ? FontWeight.bold
-                                                          : FontWeight.normal,
-                                                      fontSize: 16,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    customer.email ??
-                                                        'No email',
-                                                    style: TextStyle(
-                                                      color: Colors.grey[600],
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ],
+                                            Text(
+                                              customer.name,
+                                              style: TextStyle(
+                                                color: isSelected
+                                                    ? primaryColor
+                                                    : Colors.black87,
+                                                fontWeight: isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                                fontSize: 16,
                                               ),
                                             ),
-                                            if (isSelected)
-                                              Icon(
-                                                Icons.check_circle,
-                                                color: primaryColor,
-                                                size: 20,
+                                            Text(
+                                              customer.email ??
+                                                  'No email',
+                                              style: TextStyle(
+                                                color: Colors.grey[600],
+                                                fontSize: 12,
                                               ),
+                                            ),
                                           ],
                                         ),
                                       ),
-                                    );
-                                  },
-                                  onChanged: (Customer? newCustomer) {
-                                    if (newCustomer != null) {
-                                      setDialogState(() {
-                                        localSelectedCustomer = newCustomer;
-                                      });
-                                      setState(() {
-                                        _selectedCustomer = newCustomer;
-                                      });
-                                    }
-                                  },
-                                  validator: (value) {
-                                    if (value == null) {
-                                      return 'Please select a customer';
-                                    }
-                                    return null;
-                                  },
-                                  excludeSelected: false,
-                                  canCloseOutsideBounds: true,
-                                  closeDropDownOnClearFilterSearch: true,
+                                      if (isSelected)
+                                        Icon(
+                                          Icons.check_circle,
+                                          color: primaryColor,
+                                          size: 20,
+                                        ),
+                                    ],
+                                  ),
                                 ),
+                              );
+                            },
+                            onChanged: (Customer? newCustomer) {
+                              if (newCustomer != null) {
+                                setDialogState(() {
+                                  localSelectedCustomer = newCustomer;
+                                });
+                                setState(() {
+                                  _selectedCustomer = newCustomer;
+                                });
+                              }
+                            },
+                            validator: (value) {
+                              if (value == null) {
+                                return 'Please select a customer';
+                              }
+                              return null;
+                            },
+                            excludeSelected: false,
+                            canCloseOutsideBounds: true,
+                            closeDropDownOnClearFilterSearch: true,
+                          ),
                           const SizedBox(height: 16),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -767,26 +830,24 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                   ),
                                 ),
                                 onPressed: localSelectedCustomer == null ||
-                                        _isConfirmLoading
+                                    _isConfirmLoading
                                     ? null
                                     : () async {
-                                        setDialogState(() {
-                                          _isConfirmLoading =
-                                              true; // Start loading
-                                        });
-                                        setState(() {
-                                          _selectedCustomer =
-                                              localSelectedCustomer;
-                                        });
-                                        try {
-                                          await _createSaleOrderInOdoo(context);
-                                        } finally {
-                                          setDialogState(() {
-                                            _isConfirmLoading =
-                                                false; // Stop loading
-                                          });
-                                        }
-                                      },
+                                  setDialogState(() {
+                                    _isConfirmLoading = true;
+                                  });
+                                  setState(() {
+                                    _selectedCustomer =
+                                        localSelectedCustomer;
+                                  });
+                                  try {
+                                    await _createSaleOrderInOdoo(context);
+                                  } finally {
+                                    setDialogState(() {
+                                      _isConfirmLoading = false;
+                                    });
+                                  }
+                                },
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
@@ -807,8 +868,8 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
                                             valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                    Colors.white),
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
                                           ),
                                         ),
                                       ),
@@ -832,12 +893,12 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
   }
 
   void _showOrderConfirmationDialog(
-    BuildContext context,
-    String orderId,
-    List<OrderItem> items,
-    double totalAmount,
-    SalesOrderProvider salesOrderProvider,
-  ) {
+      BuildContext context,
+      String orderId,
+      List<OrderItem> items,
+      double totalAmount,
+      SalesOrderProvider salesOrderProvider,
+      ) {
     final currencyFormat = NumberFormat.currency(symbol: '\$');
     showDialog(
       context: context,
@@ -864,7 +925,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(16)),
+                  const BorderRadius.vertical(top: Radius.circular(16)),
                   border: Border(
                       bottom: BorderSide(color: Colors.grey[200]!, width: 1)),
                 ),
@@ -894,13 +955,12 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                     ),
                     IconButton(
                       icon:
-                          Icon(Icons.close, color: Colors.grey[600], size: 24),
+                      Icon(Icons.close, color: Colors.grey[600], size: 24),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
               ),
-              // Content Section
               SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -934,76 +994,76 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                     ...items
                         .map(
                           (item) => Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[50],
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: Colors.grey[200]!, width: 1),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: Colors.grey[200]!, width: 1),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Column(
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.product.name,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 12,
                                     children: [
                                       Text(
-                                        item.product.name,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
+                                        'Qty: ${item.quantity}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                          fontWeight: FontWeight.w500,
                                         ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Wrap(
-                                        spacing: 12,
-                                        children: [
-                                          Text(
-                                            'Qty: ${item.quantity}',
-                                            style: TextStyle(
+                                      Flexible(
+                                        child: Text(
+                                          'Code: ${item.product.defaultCode ?? 'N/A'}',
+                                          style: TextStyle(
                                               fontSize: 12,
-                                              color: Colors.grey[600],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                          Flexible(
-                                            child: Text(
-                                              'Code: ${item.product.defaultCode ?? 'N/A'}',
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600]),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
+                                              color: Colors.grey[600]),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  flex: 1,
-                                  child: Text(
-                                    currencyFormat.format(item.subtotal),
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: primaryColor,
-                                    ),
-                                    textAlign: TextAlign.end,
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        )
+                            const SizedBox(width: 8),
+                            Flexible(
+                              flex: 1,
+                              child: Text(
+                                currencyFormat.format(item.subtotal),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: primaryColor,
+                                ),
+                                textAlign: TextAlign.end,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
                         .toList(),
                     const SizedBox(height: 20),
                     Container(
@@ -1054,7 +1114,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   borderRadius:
-                      const BorderRadius.vertical(bottom: Radius.circular(16)),
+                  const BorderRadius.vertical(bottom: Radius.circular(16)),
                   border: Border(
                       top: BorderSide(color: Colors.grey[200]!, width: 1)),
                 ),
@@ -1122,16 +1182,13 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
       }
     }
 
-    // Log for debugging
-    final displayTotal = recalculatedTotal;
-
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
         title: Text(
           'Order Summary - ${widget.orderId}',
           style:
-              const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: primaryColor,
         elevation: 0,
@@ -1168,7 +1225,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                 child: ListView.separated(
                   itemCount: widget.selectedProducts.length,
                   separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
+                  const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final product = widget.selectedProducts[index];
                     final quantity = widget.quantities[product.id] ?? 0;
@@ -1180,7 +1237,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                       for (var combo in attributes) {
                         final qty = combo['quantity'] as int;
                         final attrs =
-                            combo['attributes'] as Map<String, String>;
+                        combo['attributes'] as Map<String, String>;
                         double extraCost = 0;
                         for (var attr in product.attributes ?? []) {
                           final value = attrs[attr.name];
@@ -1244,31 +1301,20 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
                                     border:
-                                        Border.all(color: Colors.grey[200]!),
+                                    Border.all(color: Colors.grey[200]!),
                                   ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: product.imageUrl != null &&
-                                            product.imageUrl!.isNotEmpty
+                                        product.imageUrl!.isNotEmpty
                                         ? Image.memory(
-                                            base64Decode(product.imageUrl!
-                                                .split(',')
-                                                .last),
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) =>
-                                                    Container(
-                                              color: Colors.grey[100],
-                                              child: Center(
-                                                child: Icon(
-                                                  Icons.inventory_2_rounded,
-                                                  color: primaryColor,
-                                                  size: 24,
-                                                ),
-                                              ),
-                                            ),
-                                          )
-                                        : Container(
+                                      base64Decode(product.imageUrl!
+                                          .split(',')
+                                          .last),
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                          Container(
                                             color: Colors.grey[100],
                                             child: Center(
                                               child: Icon(
@@ -1278,13 +1324,24 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                               ),
                                             ),
                                           ),
+                                    )
+                                        : Container(
+                                      color: Colors.grey[100],
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.inventory_2_rounded,
+                                          color: primaryColor,
+                                          size: 24,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         product.name ?? 'Unknown Product',
@@ -1327,7 +1384,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                               widget.quantities[product.id] ??
                                                   0;
                                           final pricing =
-                                              _calculateProductPricing(
+                                          _calculateProductPricing(
                                             product: product,
                                             attributes: attributes,
                                             totalQuantity: totalQuantity,
@@ -1335,7 +1392,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
 
                                           return Column(
                                             crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                            CrossAxisAlignment.start,
                                             children: [
                                               Row(
                                                 children: [
@@ -1345,7 +1402,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                                       color: Colors.grey[700],
                                                       fontSize: 12,
                                                       fontWeight:
-                                                          FontWeight.w500,
+                                                      FontWeight.w500,
                                                     ),
                                                   ),
                                                   const Spacer(),
@@ -1355,7 +1412,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                                       color: Colors.grey[800],
                                                       fontSize: 12,
                                                       fontWeight:
-                                                          FontWeight.w500,
+                                                      FontWeight.w500,
                                                     ),
                                                   ),
                                                   Text(
@@ -1365,7 +1422,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                                       color: primaryColor,
                                                       fontSize: 14,
                                                       fontWeight:
-                                                          FontWeight.bold,
+                                                      FontWeight.bold,
                                                     ),
                                                   ),
                                                 ],
@@ -1382,7 +1439,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                             Builder(
                               builder: (context) {
                                 final attributes =
-                                    widget.productAttributes?[product.id];
+                                widget.productAttributes?[product.id];
                                 final totalQuantity =
                                     widget.quantities[product.id] ?? 0;
                                 final pricing = _calculateProductPricing(
@@ -1406,7 +1463,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                     ),
                                     children: [
                                       ...pricing.attributeDetails.map(
-                                        (detail) => Padding(
+                                            (detail) => Padding(
                                           padding: const EdgeInsets.only(
                                               bottom: 6, left: 8, right: 8),
                                           child: Container(
@@ -1414,13 +1471,13 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                             decoration: BoxDecoration(
                                               color: Colors.grey[50],
                                               borderRadius:
-                                                  BorderRadius.circular(6),
+                                              BorderRadius.circular(6),
                                               border: Border.all(
                                                   color: Colors.grey[200]!),
                                             ),
                                             child: Column(
                                               crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                              CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   detail.attributesText,
@@ -1437,12 +1494,12 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                                       child: Text(
                                                         '${detail.quantity} × ${currencyFormat.format(product.price)}' +
                                                             (detail.extraCost >
-                                                                    0
+                                                                0
                                                                 ? ' + ${detail.quantity} × ${currencyFormat.format(detail.extraCost)}'
                                                                 : ''),
                                                         style: TextStyle(
                                                           color:
-                                                              Colors.grey[700],
+                                                          Colors.grey[700],
                                                           fontSize: 11,
                                                         ),
                                                       ),
@@ -1454,7 +1511,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                                                         color: primaryColor,
                                                         fontSize: 12,
                                                         fontWeight:
-                                                            FontWeight.w600,
+                                                        FontWeight.w600,
                                                       ),
                                                     ),
                                                   ],
@@ -1576,7 +1633,7 @@ class _SaleOrderPageState extends State<SaleOrderPage> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
+                              BorderRadius.circular(kBorderRadius),
                             ),
                           ),
                           onPressed: provider.isLoading
@@ -1647,7 +1704,6 @@ class AttributeDetail {
   });
 }
 
-// Helper method to calculate product pricing
 PricingData _calculateProductPricing({
   required Product product,
   List<Map<String, dynamic>>? attributes,
@@ -1662,7 +1718,6 @@ PricingData _calculateProductPricing({
       final attrs = combo['attributes'] as Map<String, String>;
       double extraCost = 0;
 
-      // Calculate extra cost for this combination
       for (var attr in product.attributes ?? []) {
         final value = attrs[attr.name];
         if (value != null && attr.extraCost != null) {
@@ -1673,15 +1728,13 @@ PricingData _calculateProductPricing({
       final lineTotal = (product.price + extraCost) * qty;
       subtotal += lineTotal;
 
-      // Format attribute text
       final attrDescription =
-          attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ');
+      attrs.entries.map((e) => '${e.key}: ${e.value}').join(', ');
 
-      // Create attribute detail
       attributeDetails.add(
         AttributeDetail(
           attributesText:
-              qty > 1 ? '$attrDescription (Qty: $qty)' : attrDescription,
+          qty > 1 ? '$attrDescription (Qty: $qty)' : attrDescription,
           extraCost: extraCost,
           quantity: qty,
           lineTotal: lineTotal,
@@ -1689,7 +1742,6 @@ PricingData _calculateProductPricing({
       );
     }
   } else {
-    // No attributes, use base price and total quantity
     subtotal = product.price * totalQuantity;
   }
 
