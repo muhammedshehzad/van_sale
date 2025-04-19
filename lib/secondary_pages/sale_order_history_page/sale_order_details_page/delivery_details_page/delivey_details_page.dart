@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
@@ -38,22 +40,29 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
   List<String> _deliveryPhotos = [];
   final TextEditingController _noteController = TextEditingController();
   bool _isLoading = false;
-  late Future<Map<String, dynamic>> _deliveryDetailsFuture; // Cache the Future
+  late Future<Map<String, dynamic>> _deliveryDetailsFuture;
+
+  // Map to store serial numbers for stock.move.line IDs
+  final Map<int, List<TextEditingController>> _serialNumberControllers = {};
 
   @override
   void initState() {
     super.initState();
+
     _tabController = TabController(length: 3, vsync: this);
-    _deliveryDetailsFuture = _fetchDeliveryDetails(context); // Initialize once
+    _deliveryDetailsFuture = _fetchDeliveryDetails(context);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _noteController.dispose();
+    _serialNumberControllers.forEach((_, controllers) =>
+        controllers.forEach((controller) => controller.dispose()));
     super.dispose();
   }
 
+  // Existing _fetchDeliveryDetails method remains unchanged
   Future<Map<String, dynamic>> _fetchDeliveryDetails(
       BuildContext context) async {
     debugPrint(
@@ -88,7 +97,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         ],
         'kwargs': {},
       });
-      debugPrint('Move lines result: $moveLinesResult');
       final moveLines = List<Map<String, dynamic>>.from(moveLinesResult);
 
       // Fetch stock.move
@@ -106,10 +114,9 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         ],
         'kwargs': {},
       });
-      debugPrint('Move result: $moveResult');
       final moveMap = {for (var move in moveResult) move['id'] as int: move};
 
-      // Fetch sale order
+      // Fetch stock.picking
       debugPrint('Fetching stock.picking for pickingId: $pickingId');
       final pickingResult = await client.callKw({
         'model': 'stock.picking',
@@ -140,7 +147,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           ],
           'kwargs': {},
         });
-        debugPrint('Sale order result: $saleOrderResult');
         if (saleOrderResult.isNotEmpty) {
           final saleOrderId = saleOrderResult[0]['id'] as int;
           debugPrint('Fetching sale.order.line for saleOrderId: $saleOrderId');
@@ -155,7 +161,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
             ],
             'kwargs': {},
           });
-          debugPrint('Sale order line result: $saleLineResult');
           salePriceMap = {
             for (var line in saleLineResult)
               (line['product_id'] as List)[0] as int:
@@ -174,7 +179,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
             salePriceMap[productId] ?? move?['price_unit'] as double? ?? 0.0;
       }
 
-      // Fetch product.product
+      // Fetch product.product with tracking field
       final productIds = moveLines
           .map((line) => (line['product_id'] as List)[0] as int)
           .toSet()
@@ -187,19 +192,10 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           [
             ['id', 'in', productIds]
           ],
-          [
-            'id',
-            'name',
-            'default_code',
-            'barcode',
-            'image_128',
-            'categ_id',
-            'list_price'
-          ],
+          ['id', 'name', 'default_code', 'barcode', 'image_128', 'tracking'],
         ],
         'kwargs': {},
       });
-      debugPrint('Product result: $productResult');
       final productMap = {
         for (var product in productResult) product['id'] as int: product
       };
@@ -211,9 +207,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           line['product_code'] = product['default_code'] ?? '';
           line['product_barcode'] = product['barcode'] ?? '';
           line['product_image'] = product['image_128'];
-          line['product_category'] = product['categ_id'] != false
-              ? (product['categ_id'] as List)[1] as String
-              : '';
+          line['tracking'] = product['tracking'] ?? 'none';
           if (line['price_unit'] == 0.0) {
             line['price_unit'] = product['list_price'] as double? ?? 0.0;
           }
@@ -233,11 +227,10 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           [
             ['id', 'in', uomIds]
           ],
-          ['id', 'name', 'category_id'],
+          ['id', 'name'],
         ],
         'kwargs': {},
       });
-      debugPrint('UoM result: $uomResult');
       final uomMap = {for (var uom in uomResult) uom['id'] as int: uom};
 
       for (var line in moveLines) {
@@ -250,7 +243,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         }
       }
 
-      // Fetch stock.picking
+      // Fetch stock.picking (full details)
       debugPrint('Fetching stock.picking for pickingId: $pickingId');
       final pickingResults = await client.callKw({
         'model': 'stock.picking',
@@ -279,9 +272,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         ],
         'kwargs': {},
       });
-      debugPrint('Picking result: $pickingResults');
       if (pickingResults.isEmpty) {
-        debugPrint('Error: Picking not found');
         throw Exception('Picking not found');
       }
       final pickingDetail = pickingResults[0] as Map<String, dynamic>;
@@ -313,7 +304,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           ],
           'kwargs': {},
         });
-        debugPrint('Partner result: $partnerResult');
         if (partnerResult.isNotEmpty) {
           partnerAddress = partnerResult[0] as Map<String, dynamic>;
         }
@@ -333,7 +323,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         ],
         'kwargs': {'order': 'date desc', 'limit': 10},
       });
-      debugPrint('Status history result: $statusHistoryResult');
       final statusHistory =
           List<Map<String, dynamic>>.from(statusHistoryResult);
 
@@ -349,12 +338,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
               ((line['price_unit'] as double) *
                   (line['quantity'] as double? ?? 0.0)));
 
-      // Log final data for verification
-      debugPrint('Final moveLines after updates: $moveLines');
-      debugPrint('Calculated totalValue: $totalValue');
-
-      debugPrint(
-          'Data fetched successfully: moveLines: ${moveLines.length}, totalPicked: $totalPicked');
       return {
         'moveLines': moveLines,
         'totalPicked': totalPicked,
@@ -367,16 +350,12 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
     } catch (e) {
       debugPrint('Error in _fetchDeliveryDetails: $e');
       rethrow;
-    } finally {
-      debugPrint('_fetchDeliveryDetails completed');
     }
   }
 
   Future<void> _submitDelivery(BuildContext context, int pickingId) async {
     try {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
 
       final client = await SessionManager.getActiveClient();
       if (client == null) {
@@ -384,7 +363,54 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
       }
       print('Odoo client initialized successfully');
 
-      // Upload signature and photos as attachments
+      // Check picking state first
+      print('Fetching picking state...');
+      final pickingStateResult = await client.callKw({
+        'model': 'stock.picking',
+        'method': 'search_read',
+        'args': [
+          [
+            ['id', '=', pickingId]
+          ],
+          ['state'],
+        ],
+        'kwargs': {},
+      });
+      final currentState = pickingStateResult[0]['state'] as String;
+      print('Picking state before validation: $currentState');
+
+      // If picking is already done, skip validation and return success
+      if (currentState == 'done') {
+        print(
+            'Picking is already in "done" state, no further validation needed.');
+        setState(() {
+          _deliveryDetailsFuture = _fetchDeliveryDetails(context);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delivery is already confirmed')),
+        );
+        Navigator.pop(context, true);
+        return;
+      }
+
+      // Handle confirmed state by assigning the picking
+      if (currentState == 'confirmed') {
+        print('Attempting to assign picking...');
+        await client.callKw({
+          'model': 'stock.picking',
+          'method': 'action_assign',
+          'args': [
+            [pickingId]
+          ],
+          'kwargs': {},
+        });
+        print('Picking assigned');
+      } else if (currentState != 'assigned') {
+        throw Exception(
+            'Picking must be in "Confirmed" or "Assigned" state to validate. Current state: $currentState');
+      }
+
+      // Upload signature and photos
       List<int> attachmentIds = [];
       if (_signature != null) {
         print('Uploading signature...');
@@ -428,7 +454,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         print('Photo ${i + 1} uploaded, ID: $photoAttachment');
       }
 
-      // Post a message to the chatter with note and attachments
+      // Post message to picking
       if (_noteController.text.isNotEmpty || attachmentIds.isNotEmpty) {
         print('Posting message to picking with note and attachments...');
         final messageBody = _noteController.text.isNotEmpty
@@ -450,57 +476,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         print('Message posted successfully');
       }
 
-      // Check picking state
-      print('Fetching picking state...');
-      final pickingStateResult = await client.callKw({
-        'model': 'stock.picking',
-        'method': 'search_read',
-        'args': [
-          [
-            ['id', '=', pickingId]
-          ],
-          ['state'],
-        ],
-        'kwargs': {},
-      });
-      final currentState = pickingStateResult[0]['state'] as String;
-      print('Picking state before validation: $currentState');
-      if (currentState != 'assigned') {
-        if (currentState == 'confirmed') {
-          print('Attempting to assign picking...');
-          await client.callKw({
-            'model': 'stock.picking',
-            'method': 'action_assign',
-            'args': [
-              [pickingId]
-            ],
-            'kwargs': {},
-          });
-          print('Picking assigned');
-          final newStateResult = await client.callKw({
-            'model': 'stock.picking',
-            'method': 'search_read',
-            'args': [
-              [
-                ['id', '=', pickingId]
-              ],
-              ['state'],
-            ],
-            'kwargs': {},
-          });
-          final newState = newStateResult[0]['state'] as String;
-          print('New picking state: $newState');
-          if (newState != 'assigned') {
-            throw Exception(
-                'Failed to move picking to "Assigned" state. Current state: $newState');
-          }
-        } else {
-          throw Exception(
-              'Picking must be in "Assigned" state to validate. Current state: $currentState');
-        }
-      }
-
-      // Fetch stock.move records for the picking
+      // Fetch stock.move and stock.move.line
       print('Fetching stock.move records...');
       final moveRecords = await client.callKw({
         'model': 'stock.move',
@@ -509,105 +485,500 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           [
             ['picking_id', '=', pickingId]
           ],
-          ['id', 'done_quantity', 'product_qty', 'product_id'],
+          ['id', 'quantity_done', 'product_uom_qty', 'product_id'],
         ],
         'kwargs': {},
       });
       print('Stock.move records fetched: $moveRecords');
 
+      print('Fetching stock.move.line records...');
+      var moveLineRecords = await client.callKw({
+        'model': 'stock.move.line',
+        'method': 'search_read',
+        'args': [
+          [
+            ['picking_id', '=', pickingId]
+          ],
+          [
+            'id',
+            'move_id',
+            'product_id',
+            'qty_done', // Use qty_done
+            'lot_id',
+            'lot_name',
+            'tracking',
+            'company_id',
+            'location_id',
+            'location_dest_id'
+          ],
+        ],
+        'kwargs': {},
+      });
+      print('Stock.move.line records fetched: $moveLineRecords');
+
+      // Update stock.move and assign serial numbers
       for (var move in moveRecords) {
         final moveId = move['id'] as int;
         final currentDoneQty =
-            (move['done_quantity'] as num?)?.toDouble() ?? 0.0;
-        final demandedQty = (move['product_qty'] as num?)?.toDouble() ?? 0.0;
-        final productId =
-            move['product_id'] is List ? move['product_id'][1] : 'Unknown';
+            (move['quantity_done'] as num?)?.toDouble() ?? 0.0;
+        final demandedQty =
+            (move['product_uom_qty'] as num?)?.toDouble() ?? 0.0;
+        final productId = (move['product_id'] as List)[0] as int;
+        final productName = (move['product_id'] as List)[1] as String;
         print(
-            'Move $moveId ($productId): done_quantity=$currentDoneQty, demanded=$demandedQty');
+            'Move $moveId ($productName): quantity_done=$currentDoneQty, demanded=$demandedQty');
 
         if (currentDoneQty == 0.0 && demandedQty > 0.0) {
-          print('Updating done_quantity for move $moveId to $demandedQty');
+          print('Updating quantity_done for move $moveId to $demandedQty');
           await client.callKw({
             'model': 'stock.move',
             'method': 'write',
             'args': [
               [moveId],
-              {'done_quantity': demandedQty},
+              {'quantity_done': demandedQty}
             ],
             'kwargs': {},
           });
-          print('Updated done_quantity for move $moveId');
-        } else if (currentDoneQty == 0.0 && demandedQty == 0.0) {
-          throw Exception(
-              'No quantity set for move $moveId ($productId). Cannot validate picking.');
+          print('Updated quantity_done for move $moveId');
         }
-      }
 
-      // Validate the picking to set state to 'done'
-      print('Validating picking $pickingId to confirm delivery...');
-      int maxRetries = 3;
-      for (int attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          final validationResult = await client.callKw({
-            'model': 'stock.picking',
-            'method': 'button_validate',
-            'args': [
-              [pickingId]
+        // Handle serial-tracked products
+        final relatedMoveLines = moveLineRecords
+            .where((line) => (line['move_id'] as List)[0] == moveId)
+            .toList();
+        for (var moveLine in relatedMoveLines) {
+          final moveLineId = moveLine['id'] as int;
+          final qtyDone = (moveLine['qty_done'] as num?)?.toDouble() ?? 0.0;
+          final tracking = moveLine['tracking'] as String? ?? 'none';
+          if (tracking == 'serial' && demandedQty > 0) {
+            final serialNumberControllers =
+                _serialNumberControllers[moveLineId];
+            if (serialNumberControllers == null ||
+                serialNumberControllers.length != demandedQty.toInt()) {
+              throw Exception(
+                  'Insufficient serial numbers provided for product $productName. Expected ${demandedQty.toInt()} serial numbers.');
+            }
+
+            if (demandedQty > 1) {
+              print(
+                  'Splitting move line $moveLineId for quantity $demandedQty');
+              await client.callKw({
+                'model': 'stock.move.line',
+                'method': 'unlink',
+                'args': [
+                  [moveLineId]
+                ],
+                'kwargs': {},
+              });
+              print('Deleted original move line $moveLineId');
+
+              for (int i = 0; i < demandedQty.toInt(); i++) {
+                final serialNumber = serialNumberControllers[i].text.trim();
+                if (serialNumber.isEmpty) {
+                  throw Exception(
+                      'Serial number ${i + 1} required for product $productName.');
+                }
+
+                // Validate serial number uniqueness
+                print(
+                    'Validating serial number: $serialNumber for product $productName');
+                final existingSerial = await client.callKw({
+                  'model': 'stock.lot',
+                  'method': 'search_read',
+                  'args': [
+                    [
+                      ['name', '=', serialNumber],
+                      ['product_id', '=', productId]
+                    ],
+                    ['id'],
+                  ],
+                  'kwargs': {},
+                });
+
+                int? lotId;
+                if (existingSerial.isNotEmpty) {
+                  throw Exception(
+                      'Serial number $serialNumber is already assigned to product $productName.');
+                } else {
+                  int companyId = moveLine['company_id'] != false
+                      ? (moveLine['company_id'] as List)[0] as int
+                      : 1;
+                  print('Using company_id: $companyId for stock.lot creation');
+                  print(
+                      'Creating new stock.lot for serial number: $serialNumber');
+                  lotId = await client.callKw({
+                    'model': 'stock.lot',
+                    'method': 'create',
+                    'args': [
+                      {
+                        'name': serialNumber,
+                        'product_id': productId,
+                        'company_id': companyId,
+                      }
+                    ],
+                    'kwargs': {},
+                  }) as int;
+                  print('Created stock.lot ID: $lotId');
+                }
+
+                // Create new move line
+                print(
+                    'Creating new move line for serial number: $serialNumber');
+                final newMoveLineId = await client.callKw({
+                  'model': 'stock.move.line',
+                  'method': 'create',
+                  'args': [
+                    {
+                      'move_id': moveId,
+                      'product_id': productId,
+                      'qty_done': 1.0, // Use qty_done
+                      'lot_id': lotId,
+                      'lot_name': serialNumber,
+                      'picking_id': pickingId,
+                      'company_id': moveLine['company_id'] != false
+                          ? (moveLine['company_id'] as List)[0]
+                          : 1,
+                      'location_id': moveLine['location_id'] != false
+                          ? (moveLine['location_id'] as List)[0]
+                          : false,
+                      'location_dest_id': moveLine['location_dest_id'] != false
+                          ? (moveLine['location_dest_id'] as List)[0]
+                          : false,
+                    }
+                  ],
+                  'kwargs': {},
+                }) as int;
+                print('Created new move line ID: $newMoveLineId');
+
+                // Verify the new move line
+                final verificationResult = await client.callKw({
+                  'model': 'stock.move.line',
+                  'method': 'search_read',
+                  'args': [
+                    [
+                      ['id', '=', newMoveLineId]
+                    ],
+                    ['lot_id', 'lot_name', 'qty_done'], // Use qty_done
+                  ],
+                  'kwargs': {},
+                });
+                if (verificationResult.isEmpty ||
+                    verificationResult[0]['lot_id'] == false ||
+                    verificationResult[0]['qty_done'] != 1.0) {
+                  throw Exception(
+                      'Failed to verify new move line $newMoveLineId for serial number $serialNumber');
+                }
+                print('Verified new move line $newMoveLineId');
+              }
+            } else {
+              // Handle single quantity
+              final serialNumber = serialNumberControllers[0].text.trim();
+              if (serialNumber.isEmpty) {
+                throw Exception(
+                    'Serial number required for product $productName.');
+              }
+
+              // Validate serial number uniqueness
+              print(
+                  'Validating serial number: $serialNumber for product $productName');
+              final existingSerial = await client.callKw({
+                'model': 'stock.lot',
+                'method': 'search_read',
+                'args': [
+                  [
+                    ['name', '=', serialNumber],
+                    ['product_id', '=', productId]
+                  ],
+                  ['id'],
+                ],
+                'kwargs': {},
+              });
+
+              int? lotId;
+              if (existingSerial.isNotEmpty) {
+                throw Exception(
+                    'Serial number $serialNumber is already assigned to product $productName.');
+              } else {
+                int companyId = moveLine['company_id'] != false
+                    ? (moveLine['company_id'] as List)[0] as int
+                    : 1;
+                print('Using company_id: $companyId for stock.lot creation');
+                print(
+                    'Creating new stock.lot for serial number: $serialNumber');
+                lotId = await client.callKw({
+                  'model': 'stock.lot',
+                  'method': 'create',
+                  'args': [
+                    {
+                      'name': serialNumber,
+                      'product_id': productId,
+                      'company_id': companyId,
+                    }
+                  ],
+                  'kwargs': {},
+                }) as int;
+                print('Created stock.lot ID: $lotId');
+              }
+
+              // Assign lot_id to stock.move.line
+              print('Assigning lot_id $lotId to move line $moveLineId');
+              await client.callKw({
+                'model': 'stock.move.line',
+                'method': 'write',
+                'args': [
+                  [moveLineId],
+                  {
+                    'lot_id': lotId,
+                    'lot_name': serialNumber,
+                    'qty_done': 1.0, // Use qty_done
+                  },
+                ],
+                'kwargs': {},
+              });
+              print('Assigned lot_id $lotId to move line $moveLineId');
+
+              // Verify the assignment
+              final verificationResult = await client.callKw({
+                'model': 'stock.move.line',
+                'method': 'search_read',
+                'args': [
+                  [
+                    ['id', '=', moveLineId]
+                  ],
+                  ['lot_id', 'lot_name', 'qty_done'], // Use qty_done
+                ],
+                'kwargs': {},
+              });
+              if (verificationResult.isEmpty ||
+                  verificationResult[0]['lot_id'] == false ||
+                  verificationResult[0]['qty_done'] != 1.0) {
+                throw Exception(
+                    'Failed to verify lot_id assignment for move line $moveLineId');
+              }
+              print('Verified lot_id assignment for move line $moveLineId');
+            }
+          }
+        }
+
+        // Re-fetch stock.move and stock.move.line records for validation
+        print('Re-fetching stock.move records for validation...');
+        final updatedMoveRecords = await client.callKw({
+          'model': 'stock.move',
+          'method': 'search_read',
+          'args': [
+            [
+              ['picking_id', '=', pickingId]
             ],
-            'kwargs': {},
-          });
-          print(
-              'Validation attempt $attempt succeeded, result: $validationResult');
+            ['id', 'quantity_done', 'product_uom_qty', 'product_id'],
+          ],
+          'kwargs': {},
+        });
+        print('Updated stock.move records fetched: $updatedMoveRecords');
 
-          // Check if a wizard is returned
-          if (validationResult is Map &&
-              validationResult.containsKey('res_id')) {
-            print(
-                'Validation returned a wizard, res_id: ${validationResult['res_id']}');
-            final wizardId = validationResult['res_id'] as int;
-            await client.callKw({
-              'model': 'stock.immediate.transfer',
-              'method': 'process',
+        print('Re-fetching stock.move.line records for validation...');
+        final updatedMoveLineRecords = await client.callKw({
+          'model': 'stock.move.line',
+          'method': 'search_read',
+          'args': [
+            [
+              ['picking_id', '=', pickingId]
+            ],
+            [
+              'id',
+              'move_id',
+              'product_id',
+              'qty_done', // Use qty_done
+              'lot_id',
+              'lot_name',
+              'tracking',
+              'company_id'
+            ],
+          ],
+          'kwargs': {},
+        });
+        print(
+            'Updated stock.move.line records fetched: $updatedMoveLineRecords');
+
+        // Perform pre-validation checks
+        print('Performing pre-validation checks...');
+        for (var move in updatedMoveRecords) {
+          final moveId = move['id'] as int;
+          final demandedQty =
+              (move['product_uom_qty'] as num?)?.toDouble() ?? 0.0;
+          final doneQty = (move['quantity_done'] as num?)?.toDouble() ?? 0.0;
+
+          // Check if quantity_done matches product_uom_qty
+          if (doneQty != demandedQty) {
+            throw Exception(
+                'Move $moveId has mismatched quantities: done=$doneQty, demanded=$demandedQty');
+          }
+
+          // Verify corresponding stock.move.line records
+          final relatedMoveLines = updatedMoveLineRecords
+              .where((line) => (line['move_id'] as List)[0] == moveId)
+              .toList();
+          final totalLineQtyDone = relatedMoveLines.fold<double>(
+              0.0, (sum, line) => sum + (line['qty_done'] as double));
+          if (totalLineQtyDone != demandedQty) {
+            throw Exception(
+                'Move $moveId has mismatched move line quantities: total=$totalLineQtyDone, demanded=$demandedQty');
+          }
+          for (var moveLine in relatedMoveLines) {
+            final tracking = moveLine['tracking'] as String? ?? 'none';
+            final qtyDone = moveLine['qty_done'] as double;
+            if (tracking == 'serial') {
+              if (qtyDone != 1.0) {
+                throw Exception(
+                    'Move line ${moveLine['id']} for serial-tracked product has invalid qty_done: $qtyDone');
+              }
+              final lotId = moveLine['lot_id'];
+              final lotName = moveLine['lot_name'];
+              if (lotId == false || lotName == false) {
+                throw Exception(
+                    'Move line ${moveLine['id']} missing lot_id or lot_name for serial-tracked product');
+              }
+            }
+          }
+        }
+        print('Pre-validation checks passed');
+
+        // Ensure database commit
+        print('Ensuring database commit...');
+        await client.callKw({
+          'model': 'stock.move',
+          'method': 'search_read',
+          'args': [
+            [
+              ['picking_id', '=', pickingId]
+            ],
+            ['id', 'quantity_done'],
+          ],
+          'kwargs': {},
+        });
+        print('Database commit ensured');
+
+        // Log picking state before validation
+        print('Fetching picking state before validation...');
+        final preValidationState = await client.callKw({
+          'model': 'stock.picking',
+          'method': 'search_read',
+          'args': [
+            [
+              ['id', '=', pickingId]
+            ],
+            ['state', 'move_ids', 'move_line_ids'],
+          ],
+          'kwargs': {},
+        });
+        print('Picking state before validation: $preValidationState');
+
+        // Validate picking
+        print('Validating picking $pickingId to confirm delivery...');
+        int maxRetries = 3;
+        String? lastErrorMessage;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            final validationResult = await client.callKw({
+              'model': 'stock.picking',
+              'method': 'button_validate',
               'args': [
-                [wizardId]
+                [pickingId]
               ],
               'kwargs': {},
+            }).timeout(const Duration(seconds: 30), onTimeout: () {
+              throw TimeoutException('Validation timed out after 30 seconds');
             });
-            print('Wizard processed successfully');
+            print(
+                'Validation attempt $attempt succeeded, result: $validationResult');
+            if (validationResult is Map &&
+                validationResult.containsKey('res_id')) {
+              final wizardId = validationResult['res_id'] as int;
+              await client.callKw({
+                'model': 'stock.immediate.transfer',
+                'method': 'process',
+                'args': [
+                  [wizardId]
+                ],
+                'kwargs': {},
+              });
+              print('Wizard processed successfully');
+            }
             break;
-          } else {
-            print('Picking validated directly, no wizard required');
-            break;
+          } catch (e) {
+            print(
+                'Validation attempt $attempt failed: $e, Full error: ${e.toString()}');
+            if (e is OdooException) {
+              lastErrorMessage = e.message;
+              print('OdooException details: ${e.toString()}');
+              if (e.message
+                  .contains('You need to supply a Lot/Serial Number')) {
+                throw Exception(
+                    'Serial number required for one or more products. Please ensure all serial numbers are provided.');
+              } else if (e.message.contains('Not enough inventory')) {
+                throw Exception('Insufficient stock for one or more products.');
+              }
+            }
+            if (attempt == maxRetries) {
+              print('Posting error message to picking for manual review...');
+              await client.callKw({
+                'model': 'stock.picking',
+                'method': 'message_post',
+                'args': [
+                  [pickingId]
+                ],
+                'kwargs': {
+                  'body':
+                      'Failed to validate delivery after $maxRetries attempts. Error: ${lastErrorMessage ?? e}. Please review and validate manually.',
+                  'message_type': 'comment',
+                  'subtype_id': 1,
+                },
+              });
+              throw Exception(
+                  'Failed to validate picking after $maxRetries attempts. A message has been posted to the picking for manual review: ${lastErrorMessage ?? e}');
+            }
+            await Future.delayed(Duration(seconds: attempt * 2));
           }
-        } catch (e) {
-          print('Validation attempt $attempt failed: $e');
-          if (attempt == maxRetries) throw e;
-          await Future.delayed(Duration(seconds: 1)); // Wait before retrying
         }
+
+        // Refresh delivery details
+        setState(() {
+          _deliveryDetailsFuture = _fetchDeliveryDetails(context);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delivery confirmed successfully')),
+        );
+        Navigator.pop(context, true);
       }
-
-      // Refresh the delivery details to reflect the updated state
-      setState(() {
-        _deliveryDetailsFuture = _fetchDeliveryDetails(context);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Delivery confirmed successfully')),
-      );
-
-      Navigator.pop(context, true);
     } catch (e) {
       print('Submission error: $e');
+      String errorMessage = 'An error occurred while confirming the delivery.';
       if (e is OdooException) {
-        print('Odoo Error Details: ${e.toString()}');
+        if (e.message.contains('serial number has already been assigned')) {
+          errorMessage =
+              'The provided serial number is already assigned. Please use a unique serial number.';
+        } else if (e.message.contains('Not enough inventory')) {
+          errorMessage = 'Insufficient stock for one or more products.';
+        } else if (e.message
+            .contains('You need to supply a Lot/Serial Number')) {
+          errorMessage =
+              'A serial number is required for one or more products. Please ensure all serial numbers are provided.';
+        }
+      } else if (e.toString().contains('Serial number required')) {
+        errorMessage =
+            'Please provide serial numbers for all tracked products.';
+      } else if (e.toString().contains('already assigned')) {
+        errorMessage =
+            'One or more serial numbers are already assigned. Please use unique serial numbers.';
+      } else if (e.toString().contains('is not a subtype of type')) {
+        errorMessage =
+            'An unexpected error occurred. Please try again or contact support.';
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(content: Text(errorMessage)),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
@@ -615,9 +986,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => SignaturePad(
-          title: 'Delivery Signature',
-        ),
+        builder: (context) => SignaturePad(title: 'Delivery Signature'),
       ),
     );
 
@@ -722,7 +1091,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
         ),
       ),
       body: FutureBuilder<Map<String, dynamic>>(
-        future: _deliveryDetailsFuture, // Use the cached Future
+        future: _deliveryDetailsFuture,
         builder: (context, snapshot) {
           debugPrint('FutureBuilder state: ${snapshot.connectionState}, '
               'hasData: ${snapshot.hasData}, '
@@ -743,8 +1112,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                   ElevatedButton(
                     onPressed: () {
                       setState(() {
-                        _deliveryDetailsFuture =
-                            _fetchDeliveryDetails(context); // Retry
+                        _deliveryDetailsFuture = _fetchDeliveryDetails(context);
                       });
                     },
                     child: const Text('Retry'),
@@ -778,10 +1146,22 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
               ? DateTime.parse(pickingDetail['date_done'] as String)
               : null;
 
+          // Initialize serial number controllers for serial-tracked products
+          for (var line in moveLines) {
+            final tracking = line['tracking'] as String? ?? 'none';
+            final moveLineId = line['id'] as int;
+            final quantity =
+                line['quantity'] as double; // Add this line to define quantity
+            if (tracking == 'serial' &&
+                !_serialNumberControllers.containsKey(moveLineId)) {
+              _serialNumberControllers[moveLineId] = List.generate(
+                  quantity.toInt(), (_) => TextEditingController());
+            }
+          }
           return TabBarView(
             controller: _tabController,
             children: [
-              // Details Tab
+              // Details Tab (unchanged)
               SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1013,7 +1393,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                 ),
               ),
 
-              // Products Tab
+              // Products Tab (unchanged)
               SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1114,7 +1494,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                         final line = moveLines[index];
                         debugPrint('Line $index: $line');
 
-                        // Safely handle product_id
                         final productId = line['product_id'];
                         if (productId is! List) {
                           debugPrint(
@@ -1128,44 +1507,37 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                         debugPrint(
                             'productName for line $index: $productName (type: ${productName.runtimeType})');
 
-                        // Safely handle quantity
                         final pickedQty = line['quantity'] as double? ?? 0.0;
                         debugPrint(
                             'pickedQty for line $index: $pickedQty (type: ${pickedQty.runtimeType})');
 
-                        // Safely handle ordered_qty
                         final orderedQty =
                             line['ordered_qty'] as double? ?? 0.0;
                         debugPrint(
                             'orderedQty for line $index: $orderedQty (type: ${orderedQty.runtimeType})');
 
-                        // Safely handle product_code
                         final productCode = line['product_code'] is String
                             ? line['product_code'] as String
                             : '';
                         debugPrint(
                             'productCode for line $index: $productCode (type: ${productCode.runtimeType})');
 
-                        // Safely handle product_barcode
                         final productBarcode = line['product_barcode'] is String
                             ? line['product_barcode'] as String
                             : '';
                         debugPrint(
                             'productBarcode for line $index: $productBarcode (type: ${productBarcode.runtimeType})');
 
-                        // Safely handle uom_name
                         final uomName = line['uom_name'] is String
                             ? line['uom_name'] as String
                             : 'Units';
                         debugPrint(
                             'uomName for line $index: $uomName (type: ${uomName.runtimeType})');
 
-                        // Safely handle price_unit
                         final priceUnit = line['price_unit'] as double? ?? 0.0;
                         debugPrint(
                             'priceUnit for line $index: $priceUnit (type: ${priceUnit.runtimeType})');
 
-                        // Safely handle lot_name
                         final lotName = line['lot_name'] != false &&
                                 line['lot_name'] is String
                             ? line['lot_name'] as String
@@ -1173,7 +1545,6 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                         debugPrint(
                             'lotName for line $index: $lotName (type: ${lotName?.runtimeType ?? 'null'})');
 
-                        // Safely handle product_image
                         final productImage = line['product_image'];
                         Widget imageWidget;
                         if (productImage != null &&
@@ -1376,63 +1747,39 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                             Text(
                               'Delivery Confirmation',
                               style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[800],
-                              ),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800]),
                             ),
                             const SizedBox(height: 16),
-                            if (pickingState == 'done') ...[
-                              const Icon(
-                                Icons.check_circle,
-                                color: Colors.green,
-                                size: 48,
-                              ),
+                            if (pickingDetail['state'] == 'done') ...[
+                              const Icon(Icons.check_circle,
+                                  color: Colors.green, size: 48),
                               const SizedBox(height: 8),
                               const Text(
-                                'This delivery has been completed and confirmed.',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.green,
-                                ),
-                              ),
-                              if (dateCompleted != null) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Completed on: ${DateFormat('yyyy-MM-dd HH:mm').format(dateCompleted)}',
-                                  style: TextStyle(color: Colors.grey[700]),
-                                ),
-                              ],
+                                  'This delivery has been completed and confirmed.',
+                                  style: TextStyle(
+                                      fontSize: 16, color: Colors.green)),
                             ] else ...[
-                              const Text(
-                                'Please capture the following information to confirm delivery:',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                              const SizedBox(height: 16),
-
                               // Signature Section
-                              Text(
-                                'Customer Signature',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[800],
-                                ),
-                              ),
+                              Text('Customer Signature',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[800])),
                               const SizedBox(height: 8),
-
                               _signature == null
                                   ? ElevatedButton.icon(
                                       onPressed: _captureSignature,
-                                      icon: const Icon(
-                                        Icons.draw,
-                                        color: Colors.white,
+                                      icon: const Icon(Icons.draw,
+                                          color: Colors.white),
+                                      label: const Text(
+                                        'Capture Signature',
+                                        style: TextStyle(color: Colors.white),
                                       ),
-                                      label: const Text('Capture Signature'),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor:
                                             const Color(0xFFA12424),
-                                        foregroundColor: Colors.white,
                                         minimumSize:
                                             const Size(double.infinity, 48),
                                       ),
@@ -1444,49 +1791,44 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                           height: 150,
                                           width: double.infinity,
                                           decoration: BoxDecoration(
-                                            border:
-                                                Border.all(color: Colors.grey),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
+                                              border: Border.all(
+                                                  color: Colors.grey),
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
                                           child: Image.memory(
-                                            base64Decode(_signature!),
-                                            fit: BoxFit.contain,
-                                          ),
+                                              base64Decode(_signature!),
+                                              fit: BoxFit.contain),
                                         ),
                                         IconButton(
                                           icon: const Icon(Icons.refresh,
                                               color: Colors.grey),
-                                          onPressed: () {},
+                                          onPressed: () =>
+                                              setState(() => _signature = null),
                                         ),
                                       ],
                                     ),
-
                               const SizedBox(height: 24),
 
                               // Delivery Photos Section
-                              Text(
-                                'Delivery Photos',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[800],
-                                ),
-                              ),
+                              Text('Delivery Photos',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[800])),
                               const SizedBox(height: 8),
-
                               ElevatedButton.icon(
                                 onPressed: _capturePhoto,
                                 icon: const Icon(Icons.camera_alt,
                                     color: Colors.white),
-                                label: const Text('Take Photo'),
+                                label: const Text(
+                                  'Take Photo',
+                                  style: TextStyle(color: Colors.white),
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFFA12424),
-                                  foregroundColor: Colors.white,
                                   minimumSize: const Size(double.infinity, 48),
                                 ),
                               ),
-
                               if (_deliveryPhotos.isNotEmpty) ...[
                                 const SizedBox(height: 12),
                                 SizedBox(
@@ -1499,42 +1841,35 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                         margin: const EdgeInsets.only(right: 8),
                                         width: 100,
                                         decoration: BoxDecoration(
-                                          border:
-                                              Border.all(color: Colors.grey),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
+                                            border:
+                                                Border.all(color: Colors.grey),
+                                            borderRadius:
+                                                BorderRadius.circular(8)),
                                         child: Stack(
                                           fit: StackFit.expand,
                                           children: [
                                             Image.memory(
-                                              base64Decode(
-                                                  _deliveryPhotos[index]),
-                                              fit: BoxFit.cover,
-                                            ),
+                                                base64Decode(
+                                                    _deliveryPhotos[index]),
+                                                fit: BoxFit.cover),
                                             Positioned(
                                               top: 0,
                                               right: 0,
                                               child: GestureDetector(
-                                                onTap: () {
-                                                  setState(() {
+                                                onTap: () => setState(() =>
                                                     _deliveryPhotos
-                                                        .removeAt(index);
-                                                  });
-                                                },
+                                                        .removeAt(index)),
                                                 child: Container(
                                                   padding:
                                                       const EdgeInsets.all(2),
                                                   decoration:
                                                       const BoxDecoration(
-                                                    color: Colors.red,
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.close,
-                                                    size: 16,
-                                                    color: Colors.white,
-                                                  ),
+                                                          color: Colors.red,
+                                                          shape:
+                                                              BoxShape.circle),
+                                                  child: const Icon(Icons.close,
+                                                      size: 16,
+                                                      color: Colors.white),
                                                 ),
                                               ),
                                             ),
@@ -1545,20 +1880,63 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                   ),
                                 ),
                               ],
+                              const SizedBox(height: 24),
 
+                              // Serial Numbers Section
+                              // In the Confirmation Tab, replace the Serial Numbers section
+                              Text('Serial Numbers',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[800])),
+                              const SizedBox(height: 8),
+                              ...moveLines.expand((line) {
+                                final tracking =
+                                    line['tracking'] as String? ?? 'none';
+                                final moveLineId = line['id'] as int;
+                                final productName =
+                                    (line['product_id'] as List)[1] as String;
+                                final quantity = line['quantity'] as double;
+                                if (tracking == 'serial' && quantity > 0) {
+                                  // Initialize controllers for each serial number
+                                  if (!_serialNumberControllers
+                                      .containsKey(moveLineId)) {
+                                    _serialNumberControllers[moveLineId] =
+                                        List.generate(quantity.toInt(),
+                                            (_) => TextEditingController());
+                                  }
+                                  return List.generate(quantity.toInt(),
+                                      (index) {
+                                    return Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12.0),
+                                      child: TextField(
+                                        controller: _serialNumberControllers[
+                                            moveLineId]![index],
+                                        decoration: InputDecoration(
+                                          labelText:
+                                              'Serial Number ${index + 1} for $productName',
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
+                                          hintText:
+                                              'Enter serial number ${index + 1}',
+                                        ),
+                                      ),
+                                    );
+                                  });
+                                }
+                                return [const SizedBox.shrink()];
+                              }).toList(),
                               const SizedBox(height: 24),
 
                               // Delivery Notes Section
-                              Text(
-                                'Delivery Notes',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[800],
-                                ),
-                              ),
+                              Text('Delivery Notes',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[800])),
                               const SizedBox(height: 8),
-
                               TextField(
                                 controller: _noteController,
                                 maxLines: 4,
@@ -1566,23 +1944,25 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
                                   hintText:
                                       'Add any special notes about this delivery...',
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
+                                      borderRadius: BorderRadius.circular(8)),
                                 ),
                               ),
-
                               const SizedBox(height: 24),
 
                               // Confirm Delivery Button
                               ElevatedButton.icon(
-                                onPressed: () => _submitDelivery(
-                                    context, pickingDetail['id'] as int),
+                                onPressed: _isLoading
+                                    ? null
+                                    : () => _submitDelivery(
+                                        context, pickingDetail['id'] as int),
                                 icon: const Icon(Icons.check_circle,
                                     color: Colors.white),
-                                label: const Text('Confirm Delivery'),
+                                label: const Text(
+                                  'Confirm Delivery',
+                                  style: TextStyle(color: Colors.white),
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
                                   minimumSize: const Size(double.infinity, 48),
                                 ),
                               ),
@@ -1605,15 +1985,11 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
           children: [
             ElevatedButton.icon(
               onPressed: () {
-                // Implement functionality to print delivery slip
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Printing delivery slip...')),
                 );
               },
-              icon: Icon(
-                Icons.print,
-                color: Colors.white,
-              ),
+              icon: Icon(Icons.print, color: Colors.white),
               label: const Text('Print'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.grey[800],
@@ -1622,32 +1998,24 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
             ),
             ElevatedButton.icon(
               onPressed: () {
-                // Implement functionality to email delivery slip
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Emailing delivery slip...')),
                 );
               },
-              icon: const Icon(
-                Icons.email,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.email, color: Colors.white),
               label: const Text('Email'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
+                backgroundColor: const Color(0xFFA12424),
                 foregroundColor: Colors.white,
               ),
             ),
             ElevatedButton.icon(
               onPressed: () {
-                // Implement functionality to mark as delivered
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Marking as delivered...')),
                 );
               },
-              icon: const Icon(
-                Icons.done_all,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.done_all, color: Colors.white),
               label: const Text('Deliver'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFA12424),
@@ -1690,7 +2058,7 @@ class _DeliveryDetailsPageState extends State<DeliveryDetailsPage>
   }
 }
 
-// Simple timeline widget to display status history
+// TimelineWidget, SignaturePad, SignaturePainter, CameraScreen classes remain unchanged
 class TimelineWidget extends StatelessWidget {
   final List<Map<String, dynamic>> events;
 
@@ -1744,18 +2112,12 @@ class TimelineWidget extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     description.replaceAll(RegExp(r'<[^>]*>'), ''),
-                    // Strip HTML tags
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[800],
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -1824,10 +2186,8 @@ class _SignaturePadState extends State<SignaturePad> {
             children: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(color: Colors.red),
-                ),
+                child:
+                    const Text('Cancel', style: TextStyle(color: Colors.red)),
               ),
               ElevatedButton(
                 onPressed: _saveSignature,

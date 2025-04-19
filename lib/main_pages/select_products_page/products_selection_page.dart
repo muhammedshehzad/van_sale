@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:van_sale_applicatioin/main_pages/select_products_page/add_products_page.dart';
 import 'package:van_sale_applicatioin/secondary_pages/sale_order_creation/sale_order_page.dart';
 import 'dart:convert';
 import 'dart:developer';
@@ -30,15 +31,43 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
   TextEditingController searchController = TextEditingController();
   Map<String, bool> selectedProducts = {};
   Map<String, int> quantities = {};
+  Map<String, List<Map<String, dynamic>>> productAttributes = {};
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     filteredProducts = List.from(widget.availableProducts);
-    for (var product in widget.availableProducts) {
-      selectedProducts[product.id] = false;
-      quantities[product.id] = 1;
+    _restoreDraftState();
+  }
+
+  void _restoreDraftState() {
+    final salesProvider =
+    Provider.of<SalesOrderProvider>(context, listen: false);
+    if (salesProvider.draftOrderId != null) {
+      setState(() {
+        selectedProducts.clear();
+        quantities.clear();
+        productAttributes.clear();
+        for (var product in salesProvider.draftSelectedProducts) {
+          selectedProducts[product.id] = true;
+          final attrQuantities = salesProvider.draftProductAttributes[product.id];
+          if (attrQuantities != null && attrQuantities.isNotEmpty) {
+            quantities[product.id] = attrQuantities.fold<int>(
+                0, (sum, comb) => sum + (comb['quantity'] as int));
+            productAttributes[product.id] = List.from(attrQuantities);
+          } else {
+            quantities[product.id] =
+                salesProvider.draftQuantities[product.id] ?? 1;
+          }
+        }
+        filteredProducts = List.from(widget.availableProducts);
+      });
+    } else {
+      for (var product in widget.availableProducts) {
+        selectedProducts[product.id] = false;
+        quantities[product.id] = 1;
+      }
     }
   }
 
@@ -60,15 +89,19 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
         selectedProducts[product.id] = false;
         quantities[product.id] = 1;
       }
+      productAttributes.clear();
       searchController.clear();
       filteredProducts = List.from(widget.availableProducts);
     });
+    final salesProvider =
+    Provider.of<SalesOrderProvider>(context, listen: false);
+    salesProvider.clearDraft();
   }
 
   Future<void> _refreshProducts() async {
     try {
       final saleorderProvider =
-          Provider.of<SalesOrderProvider>(context, listen: false);
+      Provider.of<SalesOrderProvider>(context, listen: false);
 
       await saleorderProvider.loadProducts();
 
@@ -79,10 +112,12 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
         searchController.clear();
         selectedProducts.clear();
         quantities.clear();
+        productAttributes.clear();
         for (var product in widget.availableProducts) {
           selectedProducts[product.id] = false;
           quantities[product.id] = 1;
         }
+        _restoreDraftState();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,16 +140,22 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
   }
 
   Future<List<Map<String, dynamic>>?> _showAttributeSelectionDialog(
-      BuildContext context, Product product) async {
+      BuildContext context, Product product, {int? requestedQuantity}) async {
     if (product.attributes == null || product.attributes!.isEmpty) return null;
 
-    List<Map<String, dynamic>> selectedCombinations = [];
+    List<Map<String, dynamic>> selectedCombinations =
+        productAttributes[product.id] ?? [];
 
     return await showDialog<List<Map<String, dynamic>>>(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
+            int totalQuantity = selectedCombinations.fold<int>(
+                0, (sum, combo) => sum + (combo['quantity'] as int));
+            bool isQuantityValid =
+                requestedQuantity == null || totalQuantity == requestedQuantity;
+
             return Dialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -175,7 +216,7 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                             child: Column(
                               children: selectedCombinations.map((combo) {
                                 final attrs =
-                                    combo['attributes'] as Map<String, String>;
+                                combo['attributes'] as Map<String, String>;
                                 final qty = combo['quantity'] as int;
                                 double extraCost = 0;
                                 for (var attr in product.attributes!) {
@@ -194,15 +235,15 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                          CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               attrs.entries
                                                   .map((e) =>
-                                                      '${e.key}: ${e.value}')
+                                              '${e.key}: ${e.value}')
                                                   .join(', '),
                                               style:
-                                                  const TextStyle(fontSize: 14),
+                                              const TextStyle(fontSize: 14),
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
@@ -221,6 +262,15 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                                         onPressed: () {
                                           setState(() {
                                             selectedCombinations.remove(combo);
+                                            totalQuantity = selectedCombinations
+                                                .fold<int>(
+                                                0,
+                                                    (sum, combo) => sum +
+                                                    (combo['quantity']
+                                                    as int));
+                                            isQuantityValid = requestedQuantity ==
+                                                null ||
+                                                totalQuantity == requestedQuantity;
                                           });
                                         },
                                       ),
@@ -234,6 +284,15 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                         const SizedBox(height: 16),
                         const Divider(),
                       ],
+                      if (requestedQuantity != null)
+                        Text(
+                          'Total Quantity Required: $requestedQuantity (Current: $totalQuantity)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color:
+                            isQuantityValid ? Colors.green : Colors.redAccent,
+                          ),
+                        ),
                       _AttributeCombinationForm(
                         product: product,
                         onAdd: (attributes, quantity) {
@@ -242,6 +301,12 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                               'attributes': attributes,
                               'quantity': quantity,
                             });
+                            totalQuantity = selectedCombinations.fold<int>(
+                                0,
+                                    (sum, combo) =>
+                                sum + (combo['quantity'] as int));
+                            isQuantityValid = requestedQuantity == null ||
+                                totalQuantity == requestedQuantity;
                           });
                         },
                       ),
@@ -269,9 +334,10 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                            onPressed: selectedCombinations.isNotEmpty
+                            onPressed: selectedCombinations.isNotEmpty &&
+                                isQuantityValid
                                 ? () =>
-                                    Navigator.pop(context, selectedCombinations)
+                                Navigator.pop(context, selectedCombinations)
                                 : null,
                             child: const Text('Confirm',
                                 style: TextStyle(fontSize: 14)),
@@ -299,10 +365,12 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
         searchController.clear();
         selectedProducts.clear();
         quantities.clear();
+        productAttributes.clear();
         for (var product in widget.availableProducts) {
           selectedProducts[product.id] = false;
           quantities[product.id] = 1;
         }
+        _restoreDraftState();
       });
       orderPickingProvider.resetProductRefreshFlag();
     }
@@ -312,9 +380,9 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
   void didUpdateWidget(ProductSelectionPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final salesProvider =
-        Provider.of<SalesOrderProvider>(context, listen: false);
+    Provider.of<SalesOrderProvider>(context, listen: false);
     final orderPickingProvider =
-        Provider.of<OrderPickingProvider>(context, listen: false);
+    Provider.of<OrderPickingProvider>(context, listen: false);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (orderPickingProvider.needsProductRefresh) {
@@ -326,9 +394,9 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
   @override
   Widget build(BuildContext context) {
     final salesProvider =
-        Provider.of<SalesOrderProvider>(context, listen: false);
+    Provider.of<SalesOrderProvider>(context, listen: false);
     final orderPickingProvider =
-        Provider.of<OrderPickingProvider>(context, listen: false);
+    Provider.of<OrderPickingProvider>(context, listen: false);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (orderPickingProvider.needsProductRefresh) {
@@ -365,19 +433,6 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
             padding: const EdgeInsets.only(right: 4.0),
             child: LogoutButton(),
           ),
-          // IconButton(
-          //   onPressed: () {
-          //     Navigator.push(
-          //         context,
-          //         SlidingPageTransitionRL(
-          //           page: DriverHomePage(),
-          //         ));
-          //   },
-          //   icon: Icon(
-          //     Icons.scale,
-          //     color: Colors.white,
-          //   ),
-          // ),
         ],
         backgroundColor: primaryColor,
         elevation: 0,
@@ -423,483 +478,662 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                   Expanded(
                     child: filteredProducts.isEmpty
                         ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 48,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            widget.availableProducts.isEmpty
+                                ? 'No products available'
+                                : 'No products match your search',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                        : ListView.builder(
+                      itemCount: filteredProducts.length,
+                      itemBuilder: (context, index) {
+                        final product = filteredProducts[index];
+                        return Card(
+                          color: Colors.white,
+                          elevation: 1,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
                             child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment:
+                              CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.search_off,
-                                  size: 48,
-                                  color: Colors.grey[400],
+                                Row(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  children: [
+                                    Transform.scale(
+                                      scale: 1.0,
+                                      child: Checkbox(
+                                        value: selectedProducts[
+                                        product.id] ??
+                                            false,
+                                        activeColor: primaryColor,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                          BorderRadius.circular(4),
+                                        ),
+                                        materialTapTargetSize:
+                                        MaterialTapTargetSize
+                                            .shrinkWrap,
+                                        visualDensity:
+                                        VisualDensity.compact,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            selectedProducts[product.id] =
+                                                value ?? false;
+                                            if (!value! &&
+                                                productAttributes
+                                                    .containsKey(
+                                                    product.id)) {
+                                              productAttributes
+                                                  .remove(product.id);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      width: 60,
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[100],
+                                        borderRadius:
+                                        BorderRadius.circular(8),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius:
+                                        BorderRadius.circular(8),
+                                        child: product.imageUrl != null &&
+                                            product
+                                                .imageUrl!.isNotEmpty
+                                            ? (product.imageUrl!
+                                            .startsWith('http')
+                                            ? CachedNetworkImage(
+                                          imageUrl:
+                                          product.imageUrl!,
+                                          httpHeaders: {
+                                            "Cookie":
+                                            "session_id=${Provider.of<CylloSessionModel>(context, listen: false).sessionId}",
+                                          },
+                                          width: 60,
+                                          height: 60,
+                                          fit: BoxFit.cover,
+                                          progressIndicatorBuilder:
+                                              (context, url,
+                                              downloadProgress) =>
+                                              SizedBox(
+                                                width: 60,
+                                                height: 60,
+                                                child: Center(
+                                                  child:
+                                                  CircularProgressIndicator(
+                                                    value:
+                                                    downloadProgress
+                                                        .progress,
+                                                    strokeWidth: 2,
+                                                    color:
+                                                    primaryColor,
+                                                  ),
+                                                ),
+                                              ),
+                                          imageBuilder: (context,
+                                              imageProvider) {
+                                            log("Image loaded successfully for product: ${product.name}");
+                                            return Container(
+                                              decoration:
+                                              BoxDecoration(
+                                                image:
+                                                DecorationImage(
+                                                  image:
+                                                  imageProvider,
+                                                  fit: BoxFit
+                                                      .cover,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          errorWidget: (context,
+                                              url, error) {
+                                            log("Failed to load image for product ${product.name}: $error");
+                                            return Icon(
+                                              Icons
+                                                  .inventory_2_rounded,
+                                              color:
+                                              primaryColor,
+                                              size: 24,
+                                            );
+                                          },
+                                        )
+                                            : Image.memory(
+                                          base64Decode(product
+                                              .imageUrl!
+                                              .split(',')
+                                              .last),
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error,
+                                              stackTrace) {
+                                            log("Failed to load image for product ${product.name}: $error");
+                                            return Icon(
+                                              Icons
+                                                  .inventory_2_rounded,
+                                              color:
+                                              primaryColor,
+                                              size: 24,
+                                            );
+                                          },
+                                        ))
+                                            : Icon(
+                                          Icons.inventory_2_rounded,
+                                          color: primaryColor,
+                                          size: 24,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            product.name,
+                                            style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                            maxLines: 1,
+                                            overflow:
+                                            TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets
+                                                    .symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey[100],
+                                                  borderRadius:
+                                                  BorderRadius
+                                                      .circular(4),
+                                                ),
+                                                child: Text(
+                                                  "SL: ${product.defaultCode ?? 'N/A'}",
+                                                  style: TextStyle(
+                                                    color:
+                                                    Colors.grey[700],
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                    FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ),
+                                              Container(
+                                                padding: const EdgeInsets
+                                                    .symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                  product.vanInventory >
+                                                      0
+                                                      ? Colors
+                                                      .green[50]
+                                                      : Colors
+                                                      .red[50],
+                                                  borderRadius:
+                                                  BorderRadius
+                                                      .circular(4),
+                                                ),
+                                                child: Text(
+                                                  "${product.vanInventory} in stock",
+                                                  style: TextStyle(
+                                                    color: product
+                                                        .vanInventory >
+                                                        0
+                                                        ? Colors
+                                                        .green[700]
+                                                        : Colors.red[700],
+                                                    fontSize: 12,
+                                                    fontWeight:
+                                                    FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            "\$${product.price}",
+                                            style: TextStyle(
+                                              color: primaryColor,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          if (product.attributes !=
+                                              null &&
+                                              product.attributes!
+                                                  .isNotEmpty) ...[
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 4,
+                                              children: product
+                                                  .attributes!
+                                                  .map((attribute) {
+                                                return Container(
+                                                  padding:
+                                                  const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2),
+                                                  decoration:
+                                                  BoxDecoration(
+                                                    color: Colors
+                                                        .blueGrey[50],
+                                                    borderRadius:
+                                                    BorderRadius
+                                                        .circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    "${attribute.name}: ${attribute.values.join(', ')}",
+                                                    style: TextStyle(
+                                                      color: Colors
+                                                          .blueGrey[700],
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                      FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                            if (productAttributes
+                                                .containsKey(product.id))
+                                              Padding(
+                                                padding:
+                                                const EdgeInsets.only(
+                                                    top: 8),
+                                                child: TextButton(
+                                                  onPressed: () async {
+                                                    final combinations =
+                                                    await _showAttributeSelectionDialog(
+                                                        context,
+                                                        product,
+                                                        requestedQuantity:
+                                                        quantities[
+                                                        product
+                                                            .id]);
+                                                    if (combinations !=
+                                                        null) {
+                                                      setState(() {
+                                                        productAttributes[
+                                                        product
+                                                            .id] =
+                                                            combinations;
+                                                        quantities[
+                                                        product
+                                                            .id] =
+                                                            combinations.fold<
+                                                                int>(
+                                                                0,
+                                                                    (sum,
+                                                                    comb) =>
+                                                                sum +
+                                                                    (comb[
+                                                                    'quantity'] as int));
+                                                      });
+                                                    }
+                                                  },
+                                                  child: Text(
+                                                    'Edit Attributes',
+                                                    style: TextStyle(
+                                                      color: primaryColor,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  widget.availableProducts.isEmpty
-                                      ? 'No products available'
-                                      : 'No products match your search',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: filteredProducts.length,
-                            itemBuilder: (context, index) {
-                              final product = filteredProducts[index];
-                              return Card(
-                                color: Colors.white,
-                                elevation: 1,
-                                margin: const EdgeInsets.only(bottom: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                Row(
+                                  crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                                  mainAxisAlignment:
+                                  MainAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                            color: Colors.grey[300]!),
+                                        borderRadius:
+                                        BorderRadius.circular(8),
+                                        color: Colors.grey[100],
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Transform.scale(
-                                            scale: 1.0,
-                                            child: Checkbox(
-                                              value: selectedProducts[
-                                                      product.id] ??
-                                                  false,
-                                              activeColor: primaryColor,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
+                                          Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              borderRadius:
+                                              const BorderRadius.only(
+                                                topLeft:
+                                                Radius.circular(7),
+                                                bottomLeft:
+                                                Radius.circular(7),
                                               ),
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  selectedProducts[product.id] =
-                                                      value ?? false;
-                                                });
+                                              onTap: () async {
+                                                if (quantities[
+                                                product.id]! >
+                                                    1) {
+                                                  setState(() {
+                                                    quantities[product
+                                                        .id] = quantities[
+                                                    product.id]! -
+                                                        1;
+                                                  });
+                                                  if (product
+                                                      .attributes !=
+                                                      null) {
+                                                    final combinations =
+                                                    await _showAttributeSelectionDialog(
+                                                        context,
+                                                        product,
+                                                        requestedQuantity:
+                                                        quantities[
+                                                        product
+                                                            .id]);
+                                                    if (combinations !=
+                                                        null) {
+                                                      setState(() {
+                                                        productAttributes[
+                                                        product
+                                                            .id] =
+                                                            combinations;
+                                                        quantities[
+                                                        product
+                                                            .id] =
+                                                            combinations.fold<
+                                                                int>(
+                                                                0,
+                                                                    (sum,
+                                                                    comb) =>
+                                                                sum +
+                                                                    (comb[
+                                                                    'quantity'] as int));
+                                                      });
+                                                    } else {
+                                                      setState(() {
+                                                        quantities[
+                                                        product
+                                                            .id] =
+                                                            quantities[product
+                                                                .id]! +
+                                                                1;
+                                                      });
+                                                    }
+                                                  }
+                                                }
+                                              },
+                                              child: Container(
+                                                padding:
+                                                const EdgeInsets.all(
+                                                    8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey[200],
+                                                  borderRadius:
+                                                  const BorderRadius
+                                                      .only(
+                                                    topLeft:
+                                                    Radius.circular(
+                                                        7),
+                                                    bottomLeft:
+                                                    Radius.circular(
+                                                        7),
+                                                  ),
+                                                ),
+                                                child: Icon(
+                                                  Icons.remove_rounded,
+                                                  size: 16,
+                                                  color: quantities[
+                                                  product
+                                                      .id]! >
+                                                      1
+                                                      ? primaryColor
+                                                      : Colors.grey[400],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: 40,
+                                            child: TextField(
+                                              controller:
+                                              TextEditingController(
+                                                  text: quantities[
+                                                  product.id]
+                                                      .toString()),
+                                              textAlign: TextAlign.center,
+                                              keyboardType:
+                                              TextInputType.number,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight:
+                                                FontWeight.w600,
+                                                color: Colors.grey[800],
+                                              ),
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                contentPadding:
+                                                const EdgeInsets
+                                                    .symmetric(
+                                                    vertical: 8,
+                                                    horizontal: 4),
+                                                border: InputBorder.none,
+                                                counterText: '',
+                                                fillColor:
+                                                Colors.grey[100],
+                                                filled: true,
+                                              ),
+                                              maxLength: 4,
+                                              onChanged: (value) async {
+                                                int? newQuantity =
+                                                int.tryParse(value);
+                                                if (newQuantity != null &&
+                                                    newQuantity > 0) {
+                                                  setState(() {
+                                                    quantities[product
+                                                        .id] = newQuantity;
+                                                  });
+                                                  if (product
+                                                      .attributes !=
+                                                      null) {
+                                                    final combinations =
+                                                    await _showAttributeSelectionDialog(
+                                                        context,
+                                                        product,
+                                                        requestedQuantity:
+                                                        newQuantity);
+                                                    if (combinations !=
+                                                        null) {
+                                                      setState(() {
+                                                        productAttributes[
+                                                        product
+                                                            .id] =
+                                                            combinations;
+                                                        quantities[
+                                                        product
+                                                            .id] =
+                                                            combinations.fold<
+                                                                int>(
+                                                                0,
+                                                                    (sum,
+                                                                    comb) =>
+                                                                sum +
+                                                                    (comb[
+                                                                    'quantity'] as int));
+                                                      });
+                                                    } else {
+                                                      setState(() {
+                                                        quantities[product
+                                                            .id] =
+                                                        productAttributes.containsKey(
+                                                            product
+                                                                .id)
+                                                            ? productAttributes[product
+                                                            .id]!
+                                                            .fold<
+                                                            int>(
+                                                            0,
+                                                                (sum,
+                                                                comb) =>
+                                                            sum +
+                                                                (comb['quantity']
+                                                                as int))
+                                                            : 1;
+                                                      });
+                                                    }
+                                                  }
+                                                }
+                                              },
+                                              onSubmitted: (value) {
+                                                int? newQuantity =
+                                                int.tryParse(value);
+                                                if (newQuantity == null ||
+                                                    newQuantity <= 0) {
+                                                  setState(() {
+                                                    quantities[
+                                                    product.id] = 1;
+                                                  });
+                                                }
                                               },
                                             ),
                                           ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            width: 60,
-                                            height: 60,
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey[100],
+                                          Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
                                               borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              child: product.imageUrl != null &&
-                                                      product
-                                                          .imageUrl!.isNotEmpty
-                                                  ? (product.imageUrl!
-                                                          .startsWith('http')
-                                                      ? CachedNetworkImage(
-                                                          imageUrl:
-                                                              product.imageUrl!,
-                                                          httpHeaders: {
-                                                            "Cookie":
-                                                                "session_id=${Provider.of<CylloSessionModel>(context, listen: false).sessionId}",
-                                                          },
-                                                          width: 60,
-                                                          height: 60,
-                                                          fit: BoxFit.cover,
-                                                          progressIndicatorBuilder:
-                                                              (context, url,
-                                                                      downloadProgress) =>
-                                                                  SizedBox(
-                                                            width: 60,
-                                                            height: 60,
-                                                            child: Center(
-                                                              child:
-                                                                  CircularProgressIndicator(
-                                                                value:
-                                                                    downloadProgress
-                                                                        .progress,
-                                                                strokeWidth: 2,
-                                                                color:
-                                                                    primaryColor,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                          imageBuilder: (context,
-                                                              imageProvider) {
-                                                            log("Image loaded successfully for product: ${product.name}");
-                                                            return Container(
-                                                              decoration:
-                                                                  BoxDecoration(
-                                                                image:
-                                                                    DecorationImage(
-                                                                  image:
-                                                                      imageProvider,
-                                                                  fit: BoxFit
-                                                                      .cover,
-                                                                ),
-                                                              ),
-                                                            );
-                                                          },
-                                                          errorWidget: (context,
-                                                              url, error) {
-                                                            log("Failed to load image for product ${product.name}: $error");
-                                                            return Icon(
-                                                              Icons
-                                                                  .inventory_2_rounded,
-                                                              color:
-                                                                  primaryColor,
-                                                              size: 24,
-                                                            );
-                                                          },
-                                                        )
-                                                      : Image.memory(
-                                                          base64Decode(product
-                                                              .imageUrl!
-                                                              .split(',')
-                                                              .last),
-                                                          fit: BoxFit.cover,
-                                                          errorBuilder:
-                                                              (context, error,
-                                                                  stackTrace) {
-                                                            log("Failed to load image for product ${product.name}: $error");
-                                                            return Icon(
-                                                              Icons
-                                                                  .inventory_2_rounded,
-                                                              color:
-                                                                  primaryColor,
-                                                              size: 24,
-                                                            );
-                                                          },
-                                                        ))
-                                                  : Icon(
-                                                      Icons.inventory_2_rounded,
-                                                      color: primaryColor,
-                                                      size: 24,
-                                                    ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  product.name,
-                                                  style: const TextStyle(
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.black87,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Wrap(
-                                                  spacing: 6,
-                                                  runSpacing: 4,
-                                                  children: [
-                                                    Container(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal: 6,
-                                                          vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.grey[100],
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(4),
-                                                      ),
-                                                      child: Text(
-                                                        "SL: ${product.defaultCode ?? 'N/A'}",
-                                                        style: TextStyle(
-                                                          color:
-                                                              Colors.grey[700],
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w500,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    Container(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal: 6,
-                                                          vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color:
-                                                            product.vanInventory >
-                                                                    0
-                                                                ? Colors
-                                                                    .green[50]
-                                                                : Colors
-                                                                    .red[50],
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(4),
-                                                      ),
-                                                      child: Text(
-                                                        "${product.vanInventory} in stock",
-                                                        style: TextStyle(
-                                                          color: product
-                                                                      .vanInventory >
-                                                                  0
-                                                              ? Colors
-                                                                  .green[700]
-                                                              : Colors.red[700],
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w500,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  "\$${product.price}",
-                                                  style: TextStyle(
-                                                    color: primaryColor,
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                // Display attributes if they exist
+                                              const BorderRadius.only(
+                                                topRight:
+                                                Radius.circular(7),
+                                                bottomRight:
+                                                Radius.circular(7),
+                                              ),
+                                              onTap: () async {
+                                                setState(() {
+                                                  quantities[product.id] =
+                                                      quantities[product
+                                                          .id]! +
+                                                          1;
+                                                });
                                                 if (product.attributes !=
-                                                        null &&
-                                                    product.attributes!
-                                                        .isNotEmpty) ...[
-                                                  const SizedBox(height: 8),
-                                                  Wrap(
-                                                    spacing: 6,
-                                                    runSpacing: 4,
-                                                    children: product
-                                                        .attributes!
-                                                        .map((attribute) {
-                                                      return Container(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal: 6,
-                                                                vertical: 2),
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          color: Colors
-                                                              .blueGrey[50],
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(4),
-                                                        ),
-                                                        child: Text(
-                                                          "${attribute.name}: ${attribute.values.join(', ')}",
-                                                          style: TextStyle(
-                                                            color: Colors
-                                                                .blueGrey[700],
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w500,
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }).toList(),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          Container(
-                                            decoration: BoxDecoration(
-                                              border: Border.all(
-                                                  color: Colors.grey[300]!),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              color: Colors.grey[100],
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Material(
-                                                  color: Colors.transparent,
-                                                  child: InkWell(
-                                                    borderRadius:
-                                                        const BorderRadius.only(
-                                                      topLeft:
-                                                          Radius.circular(7),
-                                                      bottomLeft:
-                                                          Radius.circular(7),
-                                                    ),
-                                                    onTap: () {
-                                                      setState(() {
-                                                        if (quantities[
-                                                                product.id]! >
-                                                            1) {
+                                                    null) {
+                                                  final combinations =
+                                                  await _showAttributeSelectionDialog(
+                                                      context,
+                                                      product,
+                                                      requestedQuantity:
+                                                      quantities[
+                                                      product
+                                                          .id]);
+                                                  if (combinations !=
+                                                      null) {
+                                                    setState(() {
+                                                      productAttributes[
+                                                      product
+                                                          .id] =
+                                                          combinations;
+                                                      quantities[product
+                                                          .id] =
+                                                          combinations.fold<
+                                                              int>(
+                                                              0,
+                                                                  (sum,
+                                                                  comb) =>
+                                                              sum +
+                                                                  (comb[
+                                                                  'quantity'] as int));
+                                                    });
+                                                  } else {
+                                                    setState(() {
+                                                      quantities[product
+                                                          .id] =
                                                           quantities[product
-                                                              .id] = quantities[
-                                                                  product.id]! -
+                                                              .id]! -
                                                               1;
-                                                        }
-                                                      });
-                                                    },
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                              8),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.grey[200],
-                                                        borderRadius:
-                                                            const BorderRadius
-                                                                .only(
-                                                          topLeft:
-                                                              Radius.circular(
-                                                                  7),
-                                                          bottomLeft:
-                                                              Radius.circular(
-                                                                  7),
-                                                        ),
-                                                      ),
-                                                      child: Icon(
-                                                        Icons.remove_rounded,
-                                                        size: 16,
-                                                        color: quantities[
-                                                                    product
-                                                                        .id]! >
-                                                                1
-                                                            ? primaryColor
-                                                            : Colors.grey[400],
-                                                      ),
-                                                    ),
+                                                    });
+                                                  }
+                                                }
+                                              },
+                                              child: Container(
+                                                padding:
+                                                const EdgeInsets.all(
+                                                    8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.grey[200],
+                                                  borderRadius:
+                                                  const BorderRadius
+                                                      .only(
+                                                    topRight:
+                                                    Radius.circular(
+                                                        7),
+                                                    bottomRight:
+                                                    Radius.circular(
+                                                        7),
                                                   ),
                                                 ),
-                                                SizedBox(
-                                                  width: 40,
-                                                  child: TextField(
-                                                    controller:
-                                                        TextEditingController(
-                                                            text: quantities[
-                                                                    product.id]
-                                                                .toString()),
-                                                    textAlign: TextAlign.center,
-                                                    keyboardType:
-                                                        TextInputType.number,
-                                                    style: TextStyle(
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.grey[800],
-                                                    ),
-                                                    decoration: InputDecoration(
-                                                      isDense: true,
-                                                      contentPadding:
-                                                          const EdgeInsets
-                                                              .symmetric(
-                                                              vertical: 8,
-                                                              horizontal: 4),
-                                                      border: InputBorder.none,
-                                                      counterText: '',
-                                                      fillColor:
-                                                          Colors.grey[100],
-                                                      filled: true,
-                                                    ),
-                                                    maxLength: 4,
-                                                    onChanged: (value) {
-                                                      int? newQuantity =
-                                                          int.tryParse(value);
-                                                      if (newQuantity != null &&
-                                                          newQuantity > 0) {
-                                                        setState(() {
-                                                          quantities[
-                                                                  product.id] =
-                                                              newQuantity;
-                                                        });
-                                                      }
-                                                    },
-                                                    onSubmitted: (value) {
-                                                      int? newQuantity =
-                                                          int.tryParse(value);
-                                                      if (newQuantity == null ||
-                                                          newQuantity <= 0) {
-                                                        setState(() {
-                                                          quantities[
-                                                              product.id] = 1;
-                                                        });
-                                                      }
-                                                    },
-                                                  ),
+                                                child: Icon(
+                                                  Icons.add_rounded,
+                                                  size: 16,
+                                                  color: primaryColor,
                                                 ),
-                                                Material(
-                                                  color: Colors.transparent,
-                                                  child: InkWell(
-                                                    borderRadius:
-                                                        const BorderRadius.only(
-                                                      topRight:
-                                                          Radius.circular(7),
-                                                      bottomRight:
-                                                          Radius.circular(7),
-                                                    ),
-                                                    onTap: () {
-                                                      setState(() {
-                                                        quantities[product.id] =
-                                                            quantities[product
-                                                                    .id]! +
-                                                                1;
-                                                      });
-                                                    },
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                              8),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.grey[200],
-                                                        borderRadius:
-                                                            const BorderRadius
-                                                                .only(
-                                                          topRight:
-                                                              Radius.circular(
-                                                                  7),
-                                                          bottomRight:
-                                                              Radius.circular(
-                                                                  7),
-                                                        ),
-                                                      ),
-                                                      child: Icon(
-                                                        Icons.add_rounded,
-                                                        size: 16,
-                                                        color: primaryColor,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
+                                              ),
                                             ),
                                           ),
                                         ],
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              );
-                            },
+                              ],
+                            ),
                           ),
+                        );
+                      },
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 20.0),
@@ -915,141 +1149,170 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                               minimumSize: const Size(0, 40),
                               shape: RoundedRectangleBorder(
                                 borderRadius:
-                                    BorderRadius.circular(kBorderRadius),
+                                BorderRadius.circular(kBorderRadius),
                               ),
                             ),
                             onPressed: _isLoading
-                                ? null // Disable button while loading
+                                ? null
                                 : () async {
-                                    setState(() {
-                                      _isLoading = true; // Start loading
-                                    });
+                              setState(() {
+                                _isLoading = true;
+                              });
 
-                                    try {
-                                      final selected = widget.availableProducts
-                                          .where((product) =>
-                                              selectedProducts[product.id] ==
-                                              true)
-                                          .toList();
+                              try {
+                                final selected = widget.availableProducts
+                                    .where((product) =>
+                                selectedProducts[product.id] ==
+                                    true)
+                                    .toList();
 
-                                      if (selected.isEmpty) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: const Text(
-                                                'Please select at least one product!'),
-                                            backgroundColor: Colors.grey,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                      kBorderRadius),
-                                            ),
-                                            behavior: SnackBarBehavior.floating,
-                                            margin: const EdgeInsets.all(16),
-                                          ),
-                                        );
-                                        return;
+                                if (selected.isEmpty) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    SnackBar(
+                                      content: const Text(
+                                          'Please select at least one product!'),
+                                      backgroundColor: Colors.grey,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                        BorderRadius.circular(
+                                            kBorderRadius),
+                                      ),
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: const EdgeInsets.all(16),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                final orderPickingProvider =
+                                Provider.of<OrderPickingProvider>(
+                                    context,
+                                    listen: false);
+                                final salesProvider =
+                                Provider.of<SalesOrderProvider>(
+                                    context,
+                                    listen: false);
+                                final orderId = salesProvider
+                                    .draftOrderId ??
+                                    await orderPickingProvider
+                                        .generateOrderId();
+                                double total = 0;
+                                List<Product> finalProducts = [];
+                                Map<String, int> updatedQuantities =
+                                Map.from(quantities);
+
+                                for (var product in selected) {
+                                  if (product.attributes != null &&
+                                      product.attributes!.isNotEmpty) {
+                                    // Use existing attributes if available
+                                    if (!productAttributes
+                                        .containsKey(product.id)) {
+                                      final combinations =
+                                      await _showAttributeSelectionDialog(
+                                          context,
+                                          product,
+                                          requestedQuantity:
+                                          quantities[product.id]);
+                                      if (combinations != null &&
+                                          combinations.isNotEmpty) {
+                                        productAttributes[product.id] =
+                                            combinations;
+                                      } else {
+                                        continue; // Skip if no attributes selected
                                       }
+                                    }
+                                    final combinations =
+                                    productAttributes[product.id]!;
+                                    final totalAttributeQuantity =
+                                    combinations.fold<int>(
+                                        0,
+                                            (sum, comb) =>
+                                        sum +
+                                            (comb['quantity']
+                                            as int));
+                                    updatedQuantities[product.id] =
+                                        totalAttributeQuantity;
 
-                                      final orderId = await orderPickingProvider
-                                          .generateOrderId();
-                                      double total = 0;
-                                      List<Product> finalProducts = [];
-                                      Map<String, int> updatedQuantities =
-                                          Map.from(quantities);
-                                      Map<String, List<Map<String, dynamic>>>
-                                          productAttributes = {};
-
-                                      for (var product in selected) {
-                                        final baseQuantity =
-                                            quantities[product.id] ?? 0;
-                                        if (product.attributes != null &&
-                                            product.attributes!.isNotEmpty) {
-                                          final combinations =
-                                              await _showAttributeSelectionDialog(
-                                                  context, product);
-                                          if (combinations != null &&
-                                              combinations.isNotEmpty) {
-                                            productAttributes[product.id] =
-                                                combinations;
-                                            final totalAttributeQuantity =
-                                                combinations.fold<int>(
-                                                    0,
-                                                    (sum, comb) =>
-                                                        sum +
-                                                        (comb['quantity']
-                                                            as int));
-                                            updatedQuantities[product.id] =
-                                                totalAttributeQuantity;
-
-                                            double productTotal = 0;
-                                            for (var combo in combinations) {
-                                              final qty =
-                                                  combo['quantity'] as int;
-                                              final attrs = combo['attributes']
-                                                  as Map<String, String>;
-                                              double extraCost = 0;
-                                              for (var attr
-                                                  in product.attributes!) {
-                                                final value = attrs[attr.name];
-                                                if (value != null &&
-                                                    attr.extraCost != null) {
-                                                  extraCost +=
-                                                      attr.extraCost![value] ??
-                                                          0;
-                                                }
-                                              }
-                                              productTotal +=
-                                                  (product.price + extraCost) *
-                                                      qty;
-                                            }
-                                            total += productTotal;
-                                            finalProducts.add(product);
-                                            widget.onAddProduct(product,
-                                                totalAttributeQuantity);
-                                          }
-                                        } else if (baseQuantity > 0) {
-                                          total += product.price * baseQuantity;
-                                          finalProducts.add(product);
-                                          widget.onAddProduct(
-                                              product, baseQuantity);
+                                    double productTotal = 0;
+                                    for (var combo in combinations) {
+                                      final qty =
+                                      combo['quantity'] as int;
+                                      final attrs = combo['attributes']
+                                      as Map<String, String>;
+                                      double extraCost = 0;
+                                      for (var attr
+                                      in product.attributes!) {
+                                        final value = attrs[attr.name];
+                                        if (value != null &&
+                                            attr.extraCost != null) {
+                                          extraCost +=
+                                              attr.extraCost![value] ??
+                                                  0;
                                         }
                                       }
-
-                                      if (finalProducts.isEmpty) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                                'No valid products selected with quantities!'),
-                                            backgroundColor: Colors.red,
-                                            behavior: SnackBarBehavior.floating,
-                                            margin: EdgeInsets.all(16),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      Navigator.push(
-                                        context,
-                                        SlidingPageTransitionRL(
-                                          page: SaleOrderPage(
-                                            selectedProducts: finalProducts,
-                                            quantities: updatedQuantities,
-                                            totalAmount: total,
-                                            orderId: orderId,
-                                            onClearSelections: clearSelections,
-                                            productAttributes:
-                                                productAttributes,
-                                          ),
-                                        ),
-                                      );
-                                    } finally {
-                                      setState(() {
-                                        _isLoading = false; // Stop loading
-                                      });
+                                      productTotal +=
+                                          (product.price + extraCost) *
+                                              qty;
                                     }
-                                  },
+                                    total += productTotal;
+                                    finalProducts.add(product);
+                                    widget.onAddProduct(
+                                        product, totalAttributeQuantity);
+                                  } else {
+                                    final baseQuantity =
+                                        quantities[product.id] ?? 0;
+                                    if (baseQuantity > 0) {
+                                      total +=
+                                          product.price * baseQuantity;
+                                      finalProducts.add(product);
+                                      widget.onAddProduct(
+                                          product, baseQuantity);
+                                    }
+                                  }
+                                }
+
+                                if (finalProducts.isEmpty) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'No valid products selected with quantities!'),
+                                      backgroundColor: Colors.red,
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: EdgeInsets.all(16),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                await salesProvider.createDraftSaleOrder(
+                                  orderId: orderId,
+                                  selectedProducts: finalProducts,
+                                  quantities: updatedQuantities,
+                                  productAttributes: productAttributes,
+                                );
+
+                                Navigator.push(
+                                  context,
+                                  SlidingPageTransitionRL(
+                                    page: SaleOrderPage(
+                                      selectedProducts: finalProducts,
+                                      quantities: updatedQuantities,
+                                      totalAmount: total,
+                                      orderId: orderId,
+                                      onClearSelections: clearSelections,
+                                      productAttributes:
+                                      productAttributes,
+                                    ),
+                                  ),
+                                );
+                              } finally {
+                                setState(() {
+                                  _isLoading = false;
+                                });
+                              }
+                            },
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -1070,8 +1333,8 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                                Colors.white),
+                                        AlwaysStoppedAnimation<Color>(
+                                            Colors.white),
                                       ),
                                     ),
                                   ),
@@ -1092,7 +1355,9 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
             right: 20,
             child: FloatingActionButton(
               onPressed: () {
-                orderPickingProvider.addNewProduct(context);
+                Navigator.push(
+                    context,
+                    SlidingPageTransitionRL(page: AddProductPage()));
               },
               backgroundColor: backgroundColor,
               foregroundColor: primaryColor,
@@ -1112,7 +1377,7 @@ class _ProductSelectionPageState extends State<ProductSelectionPage> {
                 semanticLabel: 'Add new product icon',
               ),
             ),
-          )
+          ),
         ],
       ),
     );
@@ -1136,7 +1401,7 @@ class _AttributeCombinationForm extends StatefulWidget {
 class __AttributeCombinationFormState extends State<_AttributeCombinationForm> {
   Map<String, String> selectedAttributes = {};
   final TextEditingController quantityController =
-      TextEditingController(text: '1');
+  TextEditingController(text: '1');
   final currencyFormat = NumberFormat.currency(symbol: '\$');
 
   double calculateExtraCost() {
@@ -1192,7 +1457,7 @@ class __AttributeCombinationFormState extends State<_AttributeCombinationForm> {
                 filled: true,
                 fillColor: Colors.grey[50],
                 contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: attribute.values.map((value) {
                 final extra = attribute.extraCost?[value] ?? 0;
@@ -1247,7 +1512,7 @@ class __AttributeCombinationFormState extends State<_AttributeCombinationForm> {
                   filled: true,
                   fillColor: Colors.grey[50],
                   contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
                 onChanged: (value) => setState(() {}),
               ),
@@ -1280,15 +1545,15 @@ class __AttributeCombinationFormState extends State<_AttributeCombinationForm> {
           alignment: Alignment.centerRight,
           child: ElevatedButton.icon(
             onPressed: selectedAttributes.length ==
-                        widget.product.attributes!.length &&
-                    qty > 0
+                widget.product.attributes!.length &&
+                qty > 0
                 ? () {
-                    widget.onAdd(Map.from(selectedAttributes), qty);
-                    setState(() {
-                      selectedAttributes.clear();
-                      quantityController.text = '1';
-                    });
-                  }
+              widget.onAdd(Map.from(selectedAttributes), qty);
+              setState(() {
+                selectedAttributes.clear();
+                quantityController.text = '1';
+              });
+            }
                 : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryColor,
